@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+      "upwork": {
+        "command": "uv",
+        "args": ["--directory", "/Users/crudcook/Documents/Upwork/upwork-mcp", "run", "upwork-mcp"]
+      }
+    }
+  }
