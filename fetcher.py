@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime, timedelta, timezone
 
 import requests
 from rich.console import Console
@@ -37,6 +38,7 @@ query SearchJobs($filter: MarketplaceJobPostingsSearchFilter) {
       node {
         id
         title
+        description
         publishedDateTime
         experienceLevel
         category
@@ -63,7 +65,12 @@ query SearchJobs($filter: MarketplaceJobPostingsSearchFilter) {
 """
 
 
-def fetch_jobs(search_term: str = "", category: str = "", limit: int = 500) -> int:
+def fetch_jobs(
+    search_term: str = "",
+    category: str = "",
+    limit: int = 500,
+    since_days: int | None = None,
+) -> int:
     token = get_access_token()
     org_id = _get_org_id(token)
     headers = {
@@ -71,6 +78,12 @@ def fetch_jobs(search_term: str = "", category: str = "", limit: int = 500) -> i
         "Content-Type": "application/json",
         "X-Upwork-API-TenantId": org_id,
     }
+
+    cutoff_iso = None
+    if since_days is not None:
+        cutoff_iso = (
+            datetime.now(timezone.utc) - timedelta(days=since_days)
+        ).strftime("%Y-%m-%dT%H:%M:%S")
 
     total_fetched = 0
     offset = 0
@@ -125,6 +138,13 @@ def fetch_jobs(search_term: str = "", category: str = "", limit: int = 500) -> i
             f"  Page {page:>3}: [cyan]{len(jobs)}[/cyan] jobs fetched  "
             f"([green]{total_fetched}[/green] total)"
         )
+
+        # Early-stop when sorted-by-recency results pass the cutoff window
+        if cutoff_iso and jobs and jobs[-1]["published_at"] < cutoff_iso:
+            console.print(
+                f"  [dim]Reached jobs older than {since_days}d cutoff — stopping.[/dim]"
+            )
+            break
 
         if not page_info.get("hasNextPage"):
             break
@@ -187,4 +207,5 @@ def _parse_job(node: dict, override_category: str = "") -> dict:
         "is_premium":          1 if node.get("premium") else 0,
         "is_enterprise":       1 if node.get("enterprise") else 0,
         "duration_label":      node.get("durationLabel") or "",
+        "description":         node.get("description") or "",
     }

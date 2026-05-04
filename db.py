@@ -42,6 +42,7 @@ def init_db():
                 is_premium          INTEGER DEFAULT 0,
                 is_enterprise       INTEGER DEFAULT 0,
                 duration_label      TEXT,
+                description         TEXT DEFAULT '',
                 fetched_at          TEXT DEFAULT (datetime('now'))
             )
         """)
@@ -62,6 +63,7 @@ def init_db():
             "is_premium":         "INTEGER DEFAULT 0",
             "is_enterprise":      "INTEGER DEFAULT 0",
             "duration_label":     "TEXT",
+            "description":        "TEXT    DEFAULT ''",
         }
         for col, definition in migrations.items():
             if col not in existing:
@@ -82,13 +84,13 @@ def upsert_jobs(jobs: list) -> int:
                 budget_type, budget_amount, budget_min, budget_max, skills,
                 total_applicants, client_total_hires, client_total_spent,
                 client_verified, client_feedback, client_country,
-                is_premium, is_enterprise, duration_label
+                is_premium, is_enterprise, duration_label, description
             ) VALUES (
                 :id, :title, :published_at, :category, :contractor_tier,
                 :budget_type, :budget_amount, :budget_min, :budget_max, :skills,
                 :total_applicants, :client_total_hires, :client_total_spent,
                 :client_verified, :client_feedback, :client_country,
-                :is_premium, :is_enterprise, :duration_label
+                :is_premium, :is_enterprise, :duration_label, :description
             )
             """,
             jobs,
