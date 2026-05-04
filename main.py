@@ -103,6 +103,28 @@ def cmd_dashboard(args):
             break
 
 
+def cmd_n8n(args):
+    import n8n_demand
+
+    init_db()
+
+    if not args.no_fetch:
+        console.print(Rule("[bold cyan]Fetching n8n jobs from Upwork[/bold cyan]"))
+        n = n8n_demand.fetch_n8n_jobs_from_api(days=args.days, limit=args.limit)
+        console.print(f"  [green]Fetched / refreshed[/green] {n} jobs from API.\n")
+
+    console.print(Rule(f"[bold cyan]n8n Demand · Last {args.days} days[/bold cyan]"))
+    jobs = n8n_demand.get_n8n_jobs(days=args.days)
+    report = n8n_demand.analyze(jobs)
+    n8n_demand.render(report, days=args.days)
+
+    try:
+        path = n8n_demand.export(report, days=args.days)
+        console.print(f"\n  [dim]Excel export:[/dim]  [cyan]{path}[/cyan]\n")
+    except Exception as exc:
+        console.print(f"  [yellow]Export skipped:[/yellow] {exc}\n")
+
+
 def cmd_seed(args):
     from seed import generate_demo_data
 
@@ -145,42 +167,67 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python main.py seed                          # generate demo data (no API needed)\n"
-            "  python main.py dashboard                     # full dashboard\n"
-            "  python main.py dashboard --timezone Asia/Kolkata --watch 30\n"
-            "  python main.py fetch --keywords python ai --limit 1000\n"
-            "  python main.py skills --days 7\n"
-            "  python main.py shift --timezone America/New_York\n"
+            "  python main.py seed                  # 14d of demo data (no API)\n"
+            "  python main.py dashboard 7           # full dashboard, 7d window\n"
+            "  python main.py dashboard 14 -t Asia/Kolkata -w 30\n"
+            "  python main.py fetch -k python ai -l 1000\n"
+            "  python main.py skills 7\n"
+            "  python main.py shift 14 -t America/New_York\n"
+            "  python main.py n8n 7                 # fetch + analyze last 7d of n8n jobs\n"
+            "  python main.py n8n 14 -n             # skip fetch, analyze local DB only\n"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # seed
     p = sub.add_parser("seed", help="Generate realistic demo data (no API key needed)")
-    p.add_argument("--days", type=int, default=14, help="Days of data to generate (default: 14)")
+    p.add_argument("days", type=int, nargs="?", default=14,
+                   help="Days of data to generate (default: 14)")
 
     # fetch
     p = sub.add_parser("fetch", help="Pull live jobs from Upwork GraphQL API")
-    p.add_argument("--keywords", nargs="+", metavar="WORD", help="Search keywords")
-    p.add_argument("--categories", nargs="+", metavar="CAT", help="Category names to fetch separately")
-    p.add_argument("--limit", type=int, default=500, help="Max jobs per category (default: 500)")
+    p.add_argument("-k", "--keywords", nargs="+", metavar="WORD", help="Search keywords")
+    p.add_argument("-c", "--categories", nargs="+", metavar="CAT",
+                   help="Category names to fetch separately")
+    p.add_argument("-l", "--limit", type=int, default=500,
+                   help="Max jobs per category (default: 500)")
 
     # skills
     p = sub.add_parser("skills", help="Show skills demand heatmap")
-    p.add_argument("--days", type=int, default=14, help="Analysis window in days (default: 14)")
-    p.add_argument("--categories", nargs="+", metavar="CAT", help="Filter to specific categories")
+    p.add_argument("days", type=int, nargs="?", default=14,
+                   help="Analysis window in days (default: 14)")
+    p.add_argument("-c", "--categories", nargs="+", metavar="CAT",
+                   help="Filter to specific categories")
 
     # shift
     p = sub.add_parser("shift", help="Show job volume heatmap + BD shift recommendation")
-    p.add_argument("--days", type=int, default=14, help="Analysis window in days (default: 14)")
-    p.add_argument("--timezone", type=str, metavar="TZ", help="Timezone e.g. Asia/Kolkata")
+    p.add_argument("days", type=int, nargs="?", default=14,
+                   help="Analysis window in days (default: 14)")
+    p.add_argument("-t", "--timezone", type=str, metavar="TZ",
+                   help="Timezone e.g. Asia/Kolkata")
+
+    # n8n demand analysis
+    p = sub.add_parser(
+        "n8n",
+        help="Analyze n8n automation demand by industry and workflow type",
+    )
+    p.add_argument("days", type=int, nargs="?", default=7,
+                   help="Lookback window in days (default: 7)")
+    p.add_argument("-n", "--no-fetch", action="store_true",
+                   help="Skip the API fetch and only re-analyze the local DB")
+    p.add_argument("-l", "--limit", type=int, default=1000,
+                   help="Max jobs to pull from API (default: 1000)")
 
     # dashboard
     p = sub.add_parser("dashboard", help="Show full intelligence dashboard")
-    p.add_argument("--days", type=int, default=14, help="Analysis window in days (default: 14)")
-    p.add_argument("--categories", nargs="+", metavar="CAT", help="Filter to specific categories")
-    p.add_argument("--timezone", type=str, metavar="TZ", help="Timezone e.g. Asia/Kolkata")
-    p.add_argument("--watch", type=int, metavar="MIN", help="Auto-refresh every N minutes")
+    p.add_argument("days", type=int, nargs="?", default=14,
+                   help="Analysis window in days (default: 14)")
+    p.add_argument("-c", "--categories", nargs="+", metavar="CAT",
+                   help="Filter to specific categories")
+    p.add_argument("-t", "--timezone", type=str, metavar="TZ",
+                   help="Timezone e.g. Asia/Kolkata")
+    p.add_argument("-w", "--watch", type=int, metavar="MIN",
+                   help="Auto-refresh every N minutes")
 
     args = parser.parse_args()
     dispatch = {
@@ -189,6 +236,7 @@ def main():
         "skills": cmd_skills,
         "shift": cmd_shift,
         "dashboard": cmd_dashboard,
+        "n8n": cmd_n8n,
     }
     dispatch[args.command](args)
 
