@@ -116,6 +116,7 @@ def cmd_n8n(args):
     console.print(Rule(f"[bold cyan]n8n Demand · Last {args.days} days[/bold cyan]"))
     jobs = n8n_demand.get_n8n_jobs(days=args.days)
     report = n8n_demand.analyze(jobs)
+    n8n_demand.persist_classifications(report["jobs"])  # cache regex tags for later LLM merge
     n8n_demand.render(report, days=args.days)
 
     try:
