@@ -272,12 +272,29 @@ MIGRATIONS = [
 ]
 
 
+def _run_migration_safely(conn, version: int, fn, desc: str) -> None:
+    """Run one migration inside a SAVEPOINT so a failure rolls back only it."""
+    sp = f"mig_{version}"
+    conn.execute(f"SAVEPOINT {sp}")
+    try:
+        fn(conn)
+        _record_migration(conn, version, desc)
+        conn.execute(f"RELEASE SAVEPOINT {sp}")
+    except Exception:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+        conn.execute(f"RELEASE SAVEPOINT {sp}")
+        raise
+
+
 def init_db():
     """Create tables, run migrations, ensure FTS is in sync. Idempotent.
 
     Order matters: FTS triggers must NOT exist while we're back-filling old
     rows, otherwise the AFTER UPDATE trigger fires against an unseeded FTS
     index and corrupts it.
+
+    Each migration runs in its own SAVEPOINT — if migration N fails after
+    N-1 committed, the DB is left at version N-1 cleanly (re-runnable).
     """
     with get_conn() as conn:
         # 1) Patch legacy schema so ALTER TABLE doesn't fail on missing cols.
@@ -290,8 +307,7 @@ def init_db():
         applied = _current_version(conn)
         for version, fn, desc in MIGRATIONS:
             if version > applied and version < 3:   # FTS-related migrations are >=3
-                fn(conn)
-                _record_migration(conn, version, desc)
+                _run_migration_safely(conn, version, fn, desc)
 
         # 4) Now create FTS table + triggers (table is empty until rebuild).
         conn.executescript(_FTS_SCHEMA)
@@ -300,7 +316,7 @@ def init_db():
         applied = _current_version(conn)
         for version, fn, desc in MIGRATIONS:
             if version > applied and version >= 3:
-                fn(conn)
+                _run_migration_safely(conn, version, fn, desc)
                 _record_migration(conn, version, desc)
 
 

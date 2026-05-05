@@ -1,38 +1,44 @@
+"""Environment + infrastructure config only.
+
+Domain taxonomies (skills, industries, etc.) live in `taxonomies/`.
+"""
+from __future__ import annotations
+
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-CLIENT_ID = os.getenv("UPWORK_CLIENT_ID", "")
+# ── OAuth / API ─────────────────────────────────────────────────────────────
+CLIENT_ID     = os.getenv("UPWORK_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("UPWORK_CLIENT_SECRET", "")
-ACCESS_TOKEN = os.getenv("UPWORK_ACCESS_TOKEN", "")
-REDIRECT_URI = os.getenv("UPWORK_REDIRECT_URI", "http://localhost:8080/callback")
+ACCESS_TOKEN  = os.getenv("UPWORK_ACCESS_TOKEN", "")
+REDIRECT_URI  = os.getenv("UPWORK_REDIRECT_URI", "http://localhost:8080/callback")
+
+GRAPHQL_URL      = "https://api.upwork.com/graphql"
+AUTH_URL         = "https://www.upwork.com/ab/account-security/oauth2/authorize"
+TOKEN_URL        = "https://www.upwork.com/api/v3/oauth2/token"
+TOKEN_CACHE_FILE = ".token_cache.json"
+
+# ── Storage ─────────────────────────────────────────────────────────────────
+DB_PATH = os.getenv("UPWORK_DB_PATH", "upwork_jobs.db")
+
+# ── Display ─────────────────────────────────────────────────────────────────
 TIMEZONE = os.getenv("TIMEZONE", "UTC")
 
-GRAPHQL_URL = "https://api.upwork.com/graphql"
-AUTH_URL = "https://www.upwork.com/ab/account-security/oauth2/authorize"
-TOKEN_URL = "https://www.upwork.com/api/v3/oauth2/token"
-TOKEN_CACHE_FILE = ".token_cache.json"
-DB_PATH = "upwork_jobs.db"
+# ── Fetcher tuning ──────────────────────────────────────────────────────────
+# Max retries on transient errors (5xx, connection reset). Each retry waits
+# RETRY_BACKOFF_BASE * (2 ** attempt) seconds, capped at RETRY_BACKOFF_MAX.
+FETCH_MAX_RETRIES     = int(os.getenv("UPWORK_FETCH_MAX_RETRIES", "4"))
+FETCH_BACKOFF_BASE    = float(os.getenv("UPWORK_FETCH_BACKOFF_BASE", "1.0"))
+FETCH_BACKOFF_MAX     = float(os.getenv("UPWORK_FETCH_BACKOFF_MAX", "30.0"))
 
-TECH_SKILLS = [
-    "Python", "JavaScript", "TypeScript", "React", "Next.js", "Vue.js",
-    "Angular", "PHP", "Laravel", "Django", "FastAPI", "Flask",
-    "Java", "Spring Boot", "Kotlin", "Swift", "Go", "Rust", "C#", "C++",
-    "AWS", "GCP", "Azure", "Docker", "Kubernetes", "Terraform", "Linux",
-    "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch",
-    "OpenAI", "LangChain", "RAG", "LLM", "Computer Vision", "NLP",
-    "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Supabase", "Firebase",
-    "React Native", "Flutter", "iOS", "Android",
-    "GraphQL", "REST API", "Microservices", "DevOps", "CI/CD", "Git",
-    "Data Analysis", "Pandas", "Power BI", "Tableau", "SQL",
-    "Web Scraping", "Selenium", "Playwright",
-    "Solidity", "Web3", "Blockchain",
-    "WordPress", "Shopify", "WooCommerce", "Webflow",
-    "Node.js", "HTML", "CSS",
-]
+# ── Backwards-compatibility shims ───────────────────────────────────────────
+# Older modules may still import these from config; re-export until removed.
+from taxonomies.skills import TECH_SKILLS  # noqa: E402,F401
 
-CATEGORIES = [
+CATEGORIES: list[str] = [
     "Web, Mobile & Software Dev",
     "IT & Networking",
     "Data Science & Analytics",
@@ -42,4 +48,4 @@ CATEGORIES = [
     "Writing",
 ]
 
-CONTRACTOR_TIERS = ["ENTRY_LEVEL", "INTERMEDIATE", "EXPERT"]
+CONTRACTOR_TIERS: list[str] = ["ENTRY_LEVEL", "INTERMEDIATE", "EXPERT"]

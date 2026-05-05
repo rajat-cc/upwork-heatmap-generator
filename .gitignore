@@ -37,3 +37,12 @@ exports/
 
 # Logs
 *.log
+
+# Backups
+backups/
+
+# Test + lint caches
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage

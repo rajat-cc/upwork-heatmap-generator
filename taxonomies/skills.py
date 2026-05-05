@@ -1,0 +1,119 @@
+"""Skill name normalisation: maps Upwork's slug-style skill names to a
+clean canonical label, drops noise tokens.
+
+The dashboard analyzer's `skills_stats` calls `normalize_skill` on every
+skill in every job. The two lookup tables here used to live inside
+`analyzer.py` mixed in with the analytics — extracted so the LLM
+enrichment module can also re-use the same canonical labels.
+"""
+from __future__ import annotations
+
+# Canonical skill list — anything in this list is treated as a known skill.
+TECH_SKILLS: list[str] = [
+    "Python", "JavaScript", "TypeScript", "React", "Next.js", "Vue.js",
+    "Angular", "PHP", "Laravel", "Django", "FastAPI", "Flask",
+    "Java", "Spring Boot", "Kotlin", "Swift", "Go", "Rust", "C#", "C++",
+    "AWS", "GCP", "Azure", "Docker", "Kubernetes", "Terraform", "Linux",
+    "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch",
+    "OpenAI", "LangChain", "RAG", "LLM", "Computer Vision", "NLP",
+    "PostgreSQL", "MySQL", "MongoDB", "Redis", "Elasticsearch", "Supabase", "Firebase",
+    "React Native", "Flutter", "iOS", "Android",
+    "GraphQL", "REST API", "Microservices", "DevOps", "CI/CD", "Git",
+    "Data Analysis", "Pandas", "Power BI", "Tableau", "SQL",
+    "Web Scraping", "Selenium", "Playwright",
+    "Solidity", "Web3", "Blockchain",
+    "WordPress", "Shopify", "WooCommerce", "Webflow",
+    "Node.js", "HTML", "CSS",
+]
+
+# Slug → canonical label
+_SLUG_MAP: dict[str, str] = {
+    "amazon-web-services": "AWS", "amazon-ec2": "AWS",
+    "amazon-s3": "AWS", "amazon-lambda": "AWS",
+    "google-cloud-platform": "GCP",
+    "microsoft-azure": "Azure",
+    "node.js": "Node.js", "nodejs": "Node.js",
+    "react.js": "React", "react-js": "React",
+    "next.js": "Next.js",
+    "vue.js": "Vue.js",
+    "angular.js": "Angular", "angularjs": "Angular",
+    "fastapi": "FastAPI",
+    "spring-boot": "Spring Boot",
+    "react-native": "React Native",
+    "machine-learning": "Machine Learning",
+    "deep-learning": "Deep Learning",
+    "natural-language-processing": "NLP",
+    "computer-vision": "Computer Vision",
+    "large-language-model": "LLM",
+    "generative-ai": "LLM",
+    "artificial-intelligence": "Machine Learning",
+    "api-integration": "REST API", "api-development": "REST API",
+    "restful-api": "REST API", "rest-api": "REST API",
+    "ci-cd": "CI/CD", "cicd": "CI/CD",
+    "automated-deployment": "CI/CD", "continuous-integration": "CI/CD",
+    "microsoft-power-bi": "Power BI", "power-bi": "Power BI",
+    "data-analysis": "Data Analysis", "data-science": "Data Analysis",
+    "data-visualization": "Tableau",
+    "html5": "HTML", "html": "HTML",
+    "css3": "CSS", "css": "CSS",
+    "web3-js": "Web3", "solidity": "Solidity", "blockchain": "Blockchain",
+    "mobile-app-development": "React Native",
+    "ios-development": "iOS", "android-development": "Android",
+    "swift-programming-language": "Swift", "kotlin": "Kotlin",
+    "flutter": "Flutter", "firebase": "Firebase",
+    "postgresql": "PostgreSQL", "mysql": "MySQL", "mongodb": "MongoDB",
+    "redis": "Redis", "elasticsearch": "Elasticsearch", "supabase": "Supabase",
+    "docker": "Docker", "kubernetes": "Kubernetes", "terraform": "Terraform",
+    "linux": "Linux", "git": "Git",
+    "python": "Python", "javascript": "JavaScript", "typescript": "TypeScript",
+    "php": "PHP", "laravel": "Laravel", "django": "Django",
+    "flask": "Flask", "java": "Java", "go": "Go", "golang": "Go",
+    "rust": "Rust", "c#": "C#", "c++": "C++", "swift": "Swift",
+    "wordpress": "WordPress", "shopify": "Shopify",
+    "woocommerce": "WooCommerce", "webflow": "Webflow",
+    "graphql": "GraphQL", "microservices": "Microservices", "devops": "DevOps",
+    "pandas": "Pandas", "tableau": "Tableau", "sql": "SQL",
+    "web-scraping": "Web Scraping", "selenium": "Selenium",
+    "playwright": "Playwright", "langchain": "LangChain",
+    "tensorflow": "TensorFlow", "pytorch": "PyTorch",
+    "openai": "OpenAI", "openai-api": "OpenAI", "rag": "RAG",
+}
+
+# Slugs we explicitly drop (too generic, too noisy, not a tech skill).
+_SKIP_SLUGS: set[str] = {
+    "phone", "web-design", "web-programming", "web-application",
+    "graphic-design", "microsoft-excel", "project-management",
+    "project-management-capability", "strategy", "technology",
+    "communication", "customer-service", "leadership", "problem-solving",
+    "critical-thinking", "research", "writing", "editing",
+    "virtual-assistant", "data-entry", "translation", "accounting",
+    "bookkeeping", "logo-design", "ui-design", "ux-design",
+    "user-interface-design", "user-experience-design",
+    "hybrid", "english", "saas", "cryptocurrency", "startup",
+    "agile", "scrum", "software-development", "software-engineering",
+    "full-stack-development", "backend-development", "frontend-development",
+    "web-development", "app-development", "ecommerce",
+}
+
+
+def normalize_skill(skill: str) -> str:
+    """Return the canonical label, or "" if the skill should be skipped."""
+    skill = skill.strip()
+    if not skill or len(skill) < 2:
+        return ""
+    slug = skill.lower().replace(" ", "-")
+    if slug in _SKIP_SLUGS:
+        return ""
+    if slug in _SLUG_MAP:
+        return _SLUG_MAP[slug]
+    skill_lower = skill.lower()
+    for known in TECH_SKILLS:
+        if skill_lower == known.lower():
+            return known
+    for known in TECH_SKILLS:
+        if known.lower() in skill_lower or skill_lower in known.lower():
+            if len(skill) >= 3:
+                return known
+    if "-" not in skill and len(skill) >= 3 and any(c.isalpha() for c in skill):
+        return skill.title()
+    return ""
