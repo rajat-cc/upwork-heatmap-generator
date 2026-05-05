@@ -1,0 +1,159 @@
+"""n8n demand-analysis taxonomies: industries, workflows, stacks.
+
+Each entry is `(label, [keywords])`. Keywords are matched as whole words
+(see `taxonomies.compile.compile_taxonomy`). A job can match multiple
+categories within an axis (multi-tag).
+
+Edit policy:
+  - Adding a keyword is safe; existing analyses remain comparable.
+  - Adding a label is safe; old DB rows just won't have it.
+  - Renaming a label invalidates cached classifications — bump the
+    classifier source version (TODO once we have versioned classifiers).
+"""
+from __future__ import annotations
+
+INDUSTRIES: list[tuple[str, list[str]]] = [
+    ("Healthcare",            ["healthcare", "medical practice", "clinic", "hospital",
+                               "patient intake", "dentist", "telehealth", "telemedicine",
+                               "ehr", "emr", "hipaa", "physician", "therapist",
+                               "wellness clinic", "mental health"]),
+    ("E-commerce",            ["shopify", "woocommerce", "ecommerce", "e-commerce",
+                               "online store", "amazon seller", "etsy seller",
+                               "product catalog", "dropshipping", "magento",
+                               "bigcommerce"]),
+    ("Real Estate",           ["real estate", "realtor", "realty", "mls listing",
+                               "property management", "airbnb host", "rental property",
+                               "zillow", "tenant", "landlord"]),
+    ("Finance / Fintech",     ["fintech", "trading bot", "crypto", "accounting firm",
+                               "bookkeeping", "payroll", "invoicing automation",
+                               "stripe automation", "quickbooks", "xero",
+                               "loan officer", "mortgage"]),
+    ("Marketing / Agency",    ["marketing agency", "smma", "seo agency", "ad agency",
+                               "ppc agency", "ad campaign", "lead generation agency",
+                               "growth agency", "performance marketing"]),
+    ("Education / EdTech",    ["edtech", "online course", "lms", "tutoring",
+                               "student enrollment", "training program", "course platform",
+                               "udemy", "teachable"]),
+    ("HR / Recruiting",       ["recruiting", "recruitment", "applicant tracking",
+                               "ats system", "hiring pipeline", "talent acquisition",
+                               "onboarding automation", "people ops"]),
+    ("Legal",                 ["law firm", "attorney", "lawyer", "legal practice",
+                               "paralegal", "contract review"]),
+    ("Travel / Hospitality",  ["hotel booking", "travel agency", "restaurant",
+                               "hospitality", "tour operator"]),
+    ("Logistics / Supply",    ["logistics", "shipping automation", "supply chain",
+                               "warehouse management", "inventory management",
+                               "fulfillment", "freight", "3pl"]),
+    ("Media / Content",       ["podcast", "youtube channel", "blog", "publishing",
+                               "newsletter", "media company", "influencer",
+                               "content creator"]),
+    ("SaaS / B2B",            ["saas", "b2b software", "developer tools"]),
+    ("Construction / Trades", ["construction", "general contractor", "plumbing",
+                               "electrician", "hvac", "roofing", "trades business"]),
+    ("Coaching / Consulting", ["coach", "coaching business", "consulting firm",
+                               "consultancy"]),
+    ("Non-Profit",            ["non-profit", "nonprofit", "ngo", "charity"]),
+]
+
+WORKFLOWS: list[tuple[str, list[str]]] = [
+    ("AI / LLM Agents",        ["openai", "gpt-3", "gpt-4", "gpt-5", "gpt", "llm",
+                                "ai agent", "chatgpt", "anthropic", "claude", "rag",
+                                "vector database", "pinecone", "weaviate", "embedding",
+                                "ai chatbot", "agentic"]),
+    ("Voice / Telephony",      ["voice agent", "vapi", "retell", "twilio", "phone call",
+                                "ivr", "voice bot", "voice ai", "elevenlabs"]),
+    ("Lead Gen / Scraping",    ["lead generation", "leadgen", "web scraping", "scraper",
+                                "linkedin scraping", "apollo.io", "prospecting",
+                                "lead enrichment", "data scraping", "playwright"]),
+    ("Email Automation",       ["email automation", "gmail automation", "mailchimp",
+                                "sendgrid", "newsletter", "drip campaign", "cold email",
+                                "smartlead", "instantly.ai", "lemlist"]),
+    ("CRM Sync",               ["crm", "hubspot", "salesforce", "pipedrive", "zoho crm",
+                                "monday.com", "gohighlevel", "ghl", "close.com"]),
+    ("Slack / Discord / Chat", ["slack", "discord", "ms teams", "telegram", "whatsapp"]),
+    ("Social Media Auto",      ["instagram", "facebook page", "tiktok", "linkedin post",
+                                "social media post", "content calendar",
+                                "social media automation"]),
+    ("Data Sync / ETL",        ["airtable", "google sheet", "google sheets", "notion",
+                                "etl", "data pipeline", "data sync", "supabase"]),
+    ("Document / PDF / OCR",   ["pdf parsing", "ocr", "invoice processing",
+                                "document parsing", "extract data from pdf",
+                                "contract parsing"]),
+    ("Webhook / API Glue",     ["webhook", "api integration", "rest api",
+                                "third-party api", "third party api"]),
+    ("Reporting / Analytics",  ["dashboard", "kpi", "weekly report", "daily report",
+                                "analytics workflow", "reporting automation",
+                                "looker studio", "metabase"]),
+    ("Customer Support Bots",  ["chatbot", "support ticket", "zendesk", "intercom",
+                                "freshdesk", "helpdesk", "customer support automation"]),
+    ("Calendar / Scheduling",  ["calendly", "google calendar", "appointment booking",
+                                "scheduling automation", "cal.com"]),
+    ("E-com Order Processing", ["order processing", "order fulfillment",
+                                "shopify order", "woocommerce order",
+                                "shipment tracking"]),
+]
+
+STACKS: list[tuple[str, list[str]]] = [
+    ("OpenAI / GPT",      ["openai", "gpt-3", "gpt-4", "gpt-5", "gpt", "chatgpt"]),
+    ("Anthropic Claude",  ["anthropic", "claude"]),
+    ("Vapi",              ["vapi"]),
+    ("Retell",            ["retell"]),
+    ("Twilio",            ["twilio"]),
+    ("ElevenLabs",        ["elevenlabs"]),
+    ("Make / Integromat", ["make.com", "integromat"]),
+    ("Zapier",            ["zapier"]),
+    ("GoHighLevel",       ["gohighlevel", "ghl"]),
+    ("HubSpot",           ["hubspot"]),
+    ("Salesforce",        ["salesforce"]),
+    ("Pipedrive",         ["pipedrive"]),
+    ("Airtable",          ["airtable"]),
+    ("Supabase",          ["supabase"]),
+    ("Notion",            ["notion"]),
+    ("Google Sheets",     ["google sheet", "google sheets"]),
+    ("Slack",             ["slack"]),
+    ("Discord",           ["discord"]),
+    ("WhatsApp",          ["whatsapp"]),
+    ("Telegram",          ["telegram"]),
+    ("Shopify",           ["shopify"]),
+    ("WooCommerce",       ["woocommerce"]),
+    ("Stripe",            ["stripe"]),
+    ("Calendly",          ["calendly"]),
+    ("Cal.com",           ["cal.com"]),
+    ("Zendesk",           ["zendesk"]),
+    ("Intercom",          ["intercom"]),
+    ("Mailchimp",         ["mailchimp"]),
+    ("SendGrid",          ["sendgrid"]),
+    ("Instantly",         ["instantly.ai", "instantly"]),
+    ("Smartlead",         ["smartlead"]),
+    ("Lemlist",           ["lemlist"]),
+    ("Apollo.io",         ["apollo.io"]),
+    ("LinkedIn",          ["linkedin"]),
+    ("Pinecone",          ["pinecone"]),
+    ("Playwright",        ["playwright"]),
+    ("Selenium",          ["selenium"]),
+    ("PostgreSQL",        ["postgres", "postgresql"]),
+    ("MongoDB",           ["mongodb"]),
+]
+
+
+# Display abbreviations for the Industry × Workflow heatmap (must fit ~6 chars).
+WORKFLOW_ABBR: dict[str, str] = {
+    "AI / LLM Agents":        "AI",
+    "Voice / Telephony":      "Voice",
+    "Lead Gen / Scraping":    "Leads",
+    "Email Automation":       "Email",
+    "CRM Sync":               "CRM",
+    "Slack / Discord / Chat": "Chat",
+    "Social Media Auto":      "Social",
+    "Data Sync / ETL":        "ETL",
+    "Document / PDF / OCR":   "Docs",
+    "Webhook / API Glue":     "API",
+    "Reporting / Analytics":  "Report",
+    "Customer Support Bots":  "Support",
+    "Calendar / Scheduling":  "Calend",
+    "E-com Order Processing": "Orders",
+}
+
+
+def abbr_workflow(name: str) -> str:
+    return WORKFLOW_ABBR.get(name, name[:6])

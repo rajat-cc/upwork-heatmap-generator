@@ -1,19 +1,32 @@
+"""Aggregations powering the general dashboard.
+
+Three independent analyses, each filtered by a `days`-window cutoff:
+  - skills_stats:        top skills with trend, opp score, competition
+  - client_stats:        country breakdown + quality buckets
+  - hourly_matrix:       7×24 jobs/hour grid in the requested timezone
+  - shift_recommendation: best 8h BD window from the matrix
+
+Returns dict-shaped results to preserve the existing renderer/exporter
+contracts. A future refactor can dataclass these too.
+"""
+from __future__ import annotations
+
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import pytz
 
-from config import TECH_SKILLS
 from db import get_conn
+from taxonomies.skills import normalize_skill
 
 DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Minimum jobs in the "old" half before we trust the trend number
+# Minimum jobs in the "old" half before we trust the trend number.
 _TREND_MIN_SAMPLE = 5
 
 
-def skills_stats(days: int = 14, categories: list = None) -> list:
+def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
     now = datetime.now(timezone.utc)
     full_cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     half_cutoff = (now - timedelta(days=days // 2)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -23,7 +36,7 @@ def skills_stats(days: int = 14, categories: list = None) -> list:
                budget_min, budget_max, total_applicants, published_at
         FROM jobs WHERE published_at >= ?
     """
-    params = [full_cutoff]
+    params: list = [full_cutoff]
     if categories:
         query += f" AND category IN ({','.join('?' * len(categories))})"
         params += list(categories)
@@ -31,7 +44,7 @@ def skills_stats(days: int = 14, categories: list = None) -> list:
     with get_conn() as conn:
         rows = conn.execute(query, params).fetchall()
 
-    aggregated = {}
+    aggregated: dict[str, dict] = {}
 
     for row in rows:
         raw_skills = json.loads(row["skills"] or "[]")
@@ -42,19 +55,15 @@ def skills_stats(days: int = 14, categories: list = None) -> list:
         is_recent = (row["published_at"] or "") >= half_cutoff
 
         for skill in raw_skills:
-            sk = _normalize_skill(skill)
+            sk = normalize_skill(skill)
             if not sk:
                 continue
             if sk not in aggregated:
                 aggregated[sk] = {
-                    "count_old": 0,
-                    "count_new": 0,
-                    "hourly_budgets": [],
-                    "fixed_budgets": [],
-                    "applicants": [],
-                    "tiers": defaultdict(int),
-                    "hourly_count": 0,
-                    "fixed_count": 0,
+                    "count_old": 0, "count_new": 0,
+                    "hourly_budgets": [], "fixed_budgets": [],
+                    "applicants": [], "tiers": defaultdict(int),
+                    "hourly_count": 0, "fixed_count": 0,
                 }
             d = aggregated[sk]
             if is_recent:
@@ -73,16 +82,15 @@ def skills_stats(days: int = 14, categories: list = None) -> list:
                 d["applicants"].append(applicants)
             d["tiers"][tier] += 1
 
-    results = []
+    results: list[dict] = []
     for sk, d in aggregated.items():
         old, new = d["count_old"], d["count_new"]
         total = old + new
 
-        # Trend: suppress if old-half sample is too small to be meaningful
         if old >= _TREND_MIN_SAMPLE:
             trend_pct = round(((new - old) / old) * 100)
         elif new > 0 and old == 0:
-            trend_pct = None  # new skill, no baseline
+            trend_pct = None
         else:
             trend_pct = None
 
@@ -107,19 +115,14 @@ def skills_stats(days: int = 14, categories: list = None) -> list:
             "exp_pct":      round(d["tiers"].get("EXPERT", 0) / tier_total * 100),
         })
 
-    # Compute opportunity score across all skills (normalised 0–100)
     if results:
         max_count = max(r["count"] for r in results) or 1
-        max_budget = max(
-            max(r["avg_hourly"], r["avg_fixed"]) for r in results
-        ) or 1
+        max_budget = max(max(r["avg_hourly"], r["avg_fixed"]) for r in results) or 1
 
         for r in results:
             demand_norm = r["count"] / max_count
-            # Use whichever budget is non-zero; if both, prefer hourly (ongoing work)
             best_budget = r["avg_hourly"] if r["avg_hourly"] > 0 else r["avg_fixed"]
             budget_norm = best_budget / max_budget
-            # Low competition = high score; guard against zero proposals
             competition_penalty = 1 / (1 + r["avg_proposals"] / 10)
             r["opportunity_score"] = round(
                 (demand_norm * 0.45 + budget_norm * 0.30 + competition_penalty * 0.25) * 100
@@ -130,7 +133,6 @@ def skills_stats(days: int = 14, categories: list = None) -> list:
 
 
 def client_stats(days: int = 14) -> dict:
-    """Returns country breakdown and client quality summary."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
     with get_conn() as conn:
@@ -143,7 +145,7 @@ def client_stats(days: int = 14) -> dict:
             [cutoff],
         ).fetchall()
 
-    country_data = defaultdict(lambda: {
+    country_data: dict[str, dict] = defaultdict(lambda: {
         "count": 0, "verified": 0, "total_spent": 0.0,
         "budgets": [], "hires": [],
     })
@@ -165,7 +167,6 @@ def client_stats(days: int = 14) -> dict:
         if row["client_total_hires"] is not None:
             country_data[country]["hires"].append(int(row["client_total_hires"]))
 
-        # Client quality classification
         hires = int(row["client_total_hires"] or 0)
         verified = bool(row["client_verified"])
         if spent >= 10000 and hires >= 5 and verified:
@@ -177,31 +178,30 @@ def client_stats(days: int = 14) -> dict:
         else:
             quality_buckets["new"] += 1
 
-    # Build ranked country list
-    countries = []
+    countries: list[dict] = []
     for country, d in country_data.items():
         avg_budget = sum(d["budgets"]) / len(d["budgets"]) if d["budgets"] else 0
         avg_hires = sum(d["hires"]) / len(d["hires"]) if d["hires"] else 0
         verified_pct = round(d["verified"] / d["count"] * 100) if d["count"] else 0
         countries.append({
-            "country":       country,
-            "count":         d["count"],
-            "verified_pct":  verified_pct,
-            "avg_budget":    avg_budget,
-            "avg_hires":     avg_hires,
+            "country":      country,
+            "count":        d["count"],
+            "verified_pct": verified_pct,
+            "avg_budget":   avg_budget,
+            "avg_hires":    avg_hires,
         })
 
     countries.sort(key=lambda x: x["count"], reverse=True)
 
     return {
-        "countries":      countries[:15],
-        "quality":        quality_buckets,
-        "verified_pct":   round(verified_total / total * 100) if total else 0,
-        "total_jobs":     total,
+        "countries":    countries[:15],
+        "quality":      quality_buckets,
+        "verified_pct": round(verified_total / total * 100) if total else 0,
+        "total_jobs":   total,
     }
 
 
-def hourly_matrix(tz_name: str = "UTC", days: int = 14) -> list:
+def hourly_matrix(tz_name: str = "UTC", days: int = 14) -> list[list[float]]:
     tz = pytz.timezone(tz_name)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -227,16 +227,13 @@ def hourly_matrix(tz_name: str = "UTC", days: int = 14) -> list:
     return [[round(matrix[wd][hr] / weeks, 1) for hr in range(24)] for wd in range(7)]
 
 
-def shift_recommendation(matrix: list) -> dict:
+def shift_recommendation(matrix: list[list[float]]) -> dict:
     weekday_matrix = matrix[:5]
     hourly_avg = [
         sum(weekday_matrix[wd][hr] for wd in range(5)) / 5
         for hr in range(24)
     ]
 
-    max_vol = max(hourly_avg) if hourly_avg else 1
-
-    # Best contiguous 8-hour BD window (sliding, wraps around midnight)
     window = 8
     doubled = hourly_avg + hourly_avg
     best_sum, shift_start = -1, 8
@@ -247,7 +244,7 @@ def shift_recommendation(matrix: list) -> dict:
             shift_start = start
     shift_end = (shift_start + window - 1) % 24
 
-    peak_hour = hourly_avg.index(max(hourly_avg))
+    peak_hour = hourly_avg.index(max(hourly_avg)) if hourly_avg else 0
 
     day_totals = [sum(matrix[wd]) for wd in range(7)]
     best_day = DAYS_OF_WEEK[day_totals.index(max(day_totals))]
@@ -257,100 +254,8 @@ def shift_recommendation(matrix: list) -> dict:
         "shift_start":  shift_start,
         "shift_end":    shift_end,
         "peak_hour":    peak_hour,
-        "peak_volume":  round(max(hourly_avg)),
+        "peak_volume":  round(max(hourly_avg)) if hourly_avg else 0,
         "best_day":     best_day,
         "worst_day":    worst_day,
         "hourly_avg":   hourly_avg,
     }
-
-
-# ─── Skill normalisation ─────────────────────────────────────────────────────
-
-_SLUG_MAP = {
-    "amazon-web-services": "AWS", "amazon-ec2": "AWS",
-    "amazon-s3": "AWS", "amazon-lambda": "AWS",
-    "google-cloud-platform": "GCP",
-    "microsoft-azure": "Azure",
-    "node.js": "Node.js", "nodejs": "Node.js",
-    "react.js": "React", "react-js": "React",
-    "next.js": "Next.js",
-    "vue.js": "Vue.js",
-    "angular.js": "Angular", "angularjs": "Angular",
-    "fastapi": "FastAPI",
-    "spring-boot": "Spring Boot",
-    "react-native": "React Native",
-    "machine-learning": "Machine Learning",
-    "deep-learning": "Deep Learning",
-    "natural-language-processing": "NLP",
-    "computer-vision": "Computer Vision",
-    "large-language-model": "LLM",
-    "generative-ai": "LLM",
-    "artificial-intelligence": "Machine Learning",
-    "api-integration": "REST API", "api-development": "REST API",
-    "restful-api": "REST API", "rest-api": "REST API",
-    "ci-cd": "CI/CD", "cicd": "CI/CD",
-    "automated-deployment": "CI/CD", "continuous-integration": "CI/CD",
-    "microsoft-power-bi": "Power BI", "power-bi": "Power BI",
-    "data-analysis": "Data Analysis", "data-science": "Data Analysis",
-    "data-visualization": "Tableau",
-    "html5": "HTML", "html": "HTML",
-    "css3": "CSS", "css": "CSS",
-    "web3-js": "Web3", "solidity": "Solidity", "blockchain": "Blockchain",
-    "mobile-app-development": "React Native",
-    "ios-development": "iOS", "android-development": "Android",
-    "swift-programming-language": "Swift", "kotlin": "Kotlin",
-    "flutter": "Flutter", "firebase": "Firebase",
-    "postgresql": "PostgreSQL", "mysql": "MySQL", "mongodb": "MongoDB",
-    "redis": "Redis", "elasticsearch": "Elasticsearch", "supabase": "Supabase",
-    "docker": "Docker", "kubernetes": "Kubernetes", "terraform": "Terraform",
-    "linux": "Linux", "git": "Git",
-    "python": "Python", "javascript": "JavaScript", "typescript": "TypeScript",
-    "php": "PHP", "laravel": "Laravel", "django": "Django",
-    "flask": "Flask", "java": "Java", "go": "Go", "golang": "Go",
-    "rust": "Rust", "c#": "C#", "c++": "C++", "swift": "Swift",
-    "wordpress": "WordPress", "shopify": "Shopify",
-    "woocommerce": "WooCommerce", "webflow": "Webflow",
-    "graphql": "GraphQL", "microservices": "Microservices", "devops": "DevOps",
-    "pandas": "Pandas", "tableau": "Tableau", "sql": "SQL",
-    "web-scraping": "Web Scraping", "selenium": "Selenium",
-    "playwright": "Playwright", "langchain": "LangChain",
-    "tensorflow": "TensorFlow", "pytorch": "PyTorch",
-    "openai": "OpenAI", "openai-api": "OpenAI", "rag": "RAG",
-}
-
-_SKIP_SLUGS = {
-    "phone", "web-design", "web-programming", "web-application",
-    "graphic-design", "microsoft-excel", "project-management",
-    "project-management-capability", "strategy", "technology",
-    "communication", "customer-service", "leadership", "problem-solving",
-    "critical-thinking", "research", "writing", "editing",
-    "virtual-assistant", "data-entry", "translation", "accounting",
-    "bookkeeping", "logo-design", "ui-design", "ux-design",
-    "user-interface-design", "user-experience-design",
-    "hybrid", "english", "saas", "cryptocurrency", "startup",
-    "agile", "scrum", "software-development", "software-engineering",
-    "full-stack-development", "backend-development", "frontend-development",
-    "web-development", "app-development", "ecommerce",
-}
-
-
-def _normalize_skill(skill: str) -> str:
-    skill = skill.strip()
-    if not skill or len(skill) < 2:
-        return ""
-    slug = skill.lower().replace(" ", "-")
-    if slug in _SKIP_SLUGS:
-        return ""
-    if slug in _SLUG_MAP:
-        return _SLUG_MAP[slug]
-    skill_lower = skill.lower()
-    for known in TECH_SKILLS:
-        if skill_lower == known.lower():
-            return known
-    for known in TECH_SKILLS:
-        if known.lower() in skill_lower or skill_lower in known.lower():
-            if len(skill) >= 3:
-                return known
-    if "-" not in skill and len(skill) >= 3 and any(c.isalpha() for c in skill):
-        return skill.title()
-    return ""

@@ -6,10 +6,77 @@ import requests
 from rich.console import Console
 
 from auth import get_access_token
-from config import GRAPHQL_URL
+from config import (
+    FETCH_BACKOFF_BASE,
+    FETCH_BACKOFF_MAX,
+    FETCH_MAX_RETRIES,
+    GRAPHQL_URL,
+)
+from core.logging_setup import get_logger
 from db import finish_fetch_run, start_fetch_run, upsert_jobs
 
 console = Console()
+log = get_logger(__name__)
+
+
+# HTTP statuses that warrant a retry with backoff.
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+
+
+def _backoff_seconds(attempt: int) -> float:
+    """Exponential: 1, 2, 4, 8 ... capped at FETCH_BACKOFF_MAX."""
+    return min(FETCH_BACKOFF_BASE * (2 ** attempt), FETCH_BACKOFF_MAX)
+
+
+def _post_with_retry(url: str, payload: dict, headers: dict, page: int) -> dict | None:
+    """POST with exponential backoff on transient failures.
+
+    Returns parsed JSON, or None to signal "give up on this page".
+    """
+    last_error: str = ""
+    for attempt in range(FETCH_MAX_RETRIES + 1):
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            if resp.status_code in _RETRY_STATUSES:
+                last_error = f"HTTP {resp.status_code}"
+                if attempt < FETCH_MAX_RETRIES:
+                    delay = _backoff_seconds(attempt)
+                    log.warning(
+                        "Page %d attempt %d/%d hit %s — retrying in %.1fs",
+                        page, attempt + 1, FETCH_MAX_RETRIES + 1, last_error, delay,
+                    )
+                    console.print(
+                        f"  [yellow]{last_error} on page {page}, "
+                        f"backoff {delay:.1f}s (attempt {attempt + 1}/{FETCH_MAX_RETRIES + 1})[/yellow]"
+                    )
+                    time.sleep(delay)
+                    continue
+            resp.raise_for_status()
+            return resp.json()
+        except requests.HTTPError as e:
+            log.error("HTTP error on page %d: %s", page, e)
+            console.print(f"[red]HTTP error page {page}: {e}[/red]")
+            return None
+        except requests.RequestException as e:
+            last_error = type(e).__name__
+            if attempt < FETCH_MAX_RETRIES:
+                delay = _backoff_seconds(attempt)
+                log.warning(
+                    "Page %d attempt %d/%d %s — retrying in %.1fs",
+                    page, attempt + 1, FETCH_MAX_RETRIES + 1, last_error, delay,
+                )
+                console.print(
+                    f"  [yellow]{last_error} on page {page}, "
+                    f"backoff {delay:.1f}s (attempt {attempt + 1}/{FETCH_MAX_RETRIES + 1})[/yellow]"
+                )
+                time.sleep(delay)
+                continue
+            log.error("Page %d gave up after %d attempts: %s", page, FETCH_MAX_RETRIES + 1, e)
+            console.print(f"[red]Page {page} failed after retries: {e}[/red]")
+            return None
+    log.error("Page %d exhausted retries (%s)", page, last_error)
+    console.print(f"[red]Page {page} exhausted retries ({last_error})[/red]")
+    return None
 
 
 def _get_org_id(token: str) -> str:
@@ -105,19 +172,8 @@ def fetch_jobs(
             "variables": {"filter": job_filter},
         }
 
-        try:
-            resp = requests.post(GRAPHQL_URL, json=payload, headers=headers, timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
-        except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code == 429:
-                console.print("[yellow]Rate limited — waiting 10s...[/yellow]")
-                time.sleep(10)
-                continue
-            console.print(f"[red]HTTP error page {page}: {e}[/red]")
-            break
-        except requests.RequestException as e:
-            console.print(f"[red]Request failed page {page}: {e}[/red]")
+        data = _post_with_retry(GRAPHQL_URL, payload, headers, page)
+        if data is None:
             break
 
         if "errors" in data:
