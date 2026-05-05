@@ -7,7 +7,7 @@ from rich.console import Console
 
 from auth import get_access_token
 from config import GRAPHQL_URL
-from db import upsert_jobs
+from db import finish_fetch_run, start_fetch_run, upsert_jobs
 
 console = Console()
 
@@ -86,9 +86,11 @@ def fetch_jobs(
         ).strftime("%Y-%m-%dT%H:%M:%S")
 
     total_fetched = 0
+    total_new = 0
     offset = 0
     page_size = 50
     page = 1
+    run_id = start_fetch_run(search_term=search_term, category=category)
 
     while total_fetched < limit:
         batch = min(page_size, limit - total_fetched)
@@ -130,13 +132,14 @@ def fetch_jobs(
             break
 
         jobs = [_parse_job(e["node"], category) for e in edges if e.get("node")]
-        upsert_jobs(jobs)
-        total_fetched += len(jobs)
-        offset += len(jobs)
+        seen, new = upsert_jobs(jobs, search_term=search_term)
+        total_fetched += seen
+        total_new    += new
+        offset       += seen
 
         console.print(
-            f"  Page {page:>3}: [cyan]{len(jobs)}[/cyan] jobs fetched  "
-            f"([green]{total_fetched}[/green] total)"
+            f"  Page {page:>3}: [cyan]{seen}[/cyan] jobs ({new} new)  "
+            f"([green]{total_fetched}[/green] total · {total_new} new)"
         )
 
         # Early-stop when sorted-by-recency results pass the cutoff window
@@ -152,6 +155,7 @@ def fetch_jobs(
         page += 1
         time.sleep(0.4)
 
+    finish_fetch_run(run_id, jobs_seen=total_fetched, jobs_new=total_new, status="done")
     return total_fetched
 
 

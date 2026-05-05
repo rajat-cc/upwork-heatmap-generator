@@ -25,7 +25,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from db import get_conn
+from db import get_conn, save_classifications, search_jobs_fts
 
 console = Console()
 EXPORTS_DIR = "exports"
@@ -185,22 +185,34 @@ def fetch_n8n_jobs_from_api(days: int = 7, limit: int = 1000) -> int:
 
 
 def get_n8n_jobs(days: int = 7) -> list[dict]:
-    """All jobs in the window where 'n8n' is in skills, title, or description."""
+    """All jobs in the window where 'n8n' is in skills, title, or description.
+
+    Two-stage filter:
+      1) FTS5 `MATCH 'n8n'` on title+description+skills — fast index scan,
+         narrows the working set to candidate jobs only
+      2) Strict `\\bn8n\\b` regex re-validation in Python — eliminates substring
+         false positives ("n8nx", URLs containing "n8n", etc.)
+    """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
 
+    candidate_ids = search_jobs_fts("n8n", since_iso=cutoff)
+    if not candidate_ids:
+        return []
+
+    placeholders = ",".join("?" * len(candidate_ids))
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, title, description, skills, published_at, category,
                    contractor_tier, budget_type, budget_amount, budget_min, budget_max,
                    total_applicants, client_total_hires, client_total_spent,
-                   client_verified, client_country
+                   client_verified, client_country, url
             FROM jobs
-            WHERE published_at >= ?
+            WHERE id IN ({placeholders})
             """,
-            [cutoff],
+            candidate_ids,
         ).fetchall()
 
     matches = []
@@ -230,8 +242,22 @@ def get_n8n_jobs(days: int = 7) -> list[dict]:
             "client_verified":  int(r["client_verified"] or 0),
             "client_hires":     int(r["client_total_hires"] or 0),
             "client_spent":     float(r["client_total_spent"] or 0),
+            "url":              r["url"] or f"https://www.upwork.com/jobs/{r['id']}",
         })
     return matches
+
+
+def persist_classifications(jobs: list[dict]) -> None:
+    """Write each job's regex classifications into job_classifications cache."""
+    rows = []
+    for j in jobs:
+        for label in j.get("industries", []):
+            rows.append({"job_id": j["id"], "axis": "industry", "label": label, "source": "regex"})
+        for label in j.get("workflows", []):
+            rows.append({"job_id": j["id"], "axis": "workflow", "label": label, "source": "regex"})
+        for label in j.get("stacks", []):
+            rows.append({"job_id": j["id"], "axis": "stack", "label": label, "source": "regex"})
+    save_classifications(rows)
 
 
 def analyze(jobs: list[dict]) -> dict:
