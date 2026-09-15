@@ -2,7 +2,7 @@
 
 > Terminal-based market intelligence for Upwork. Pulls live data from the Upwork GraphQL API, surfaces skills demand, client quality, BD shift windows, and **n8n automation demand by industry × workflow × stack** — so you know which automations to pre-build and pitch.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Rich](https://img.shields.io/badge/UI-Rich-blueviolet)
 ![SQLite](https://img.shields.io/badge/Storage-SQLite%20%2B%20FTS5-lightgrey?logo=sqlite)
@@ -77,6 +77,7 @@ make n8n-local                   # skip API, re-analyze local DB only
 
 # Data management
 make fetch                       # broad keyword sweep (8 themes)
+make probe                       # which API queries/fields this key can use → docs/api_probe.json
 make backup                      # snapshot DB to backups/
 
 # Development
@@ -92,6 +93,8 @@ python main.py n8n 7             # equivalent to: make n8n N8N_DAYS=7
 python main.py dashboard 14 -t Asia/Kolkata
 python main.py skills 30
 python main.py fetch -k python ai -l 1000
+python main.py fetch -k n8n -c <categoryUID> --since-days 2   # server-side filters
+python main.py probe             # API capability report → docs/api_probe.json
 ```
 
 ---
@@ -143,13 +146,15 @@ upwork_demand_analysis/
 ├── config.py                # env config — URLs, DB path, fetcher tuning
 ├── auth.py                  # OAuth2 authorization-code flow
 ├── db.py                    # SQLite + FTS5 + versioned migrations
-├── fetcher.py               # GraphQL client with retry/backoff
+├── fetcher.py               # GraphQL client: partial-data handling, token refresh, jittered backoff
 ├── seed.py                  # demo data generator
 │
 ├── core/                    # shared building blocks
 │   ├── models.py            #   Job, N8nReport, WorkflowStats dataclasses
 │   ├── logging_setup.py     #   stdlib logging with Rich handler
 │   ├── rich_helpers.py      #   Table factory, color cells, fmt_money
+│   ├── probe.py             #   API capability probe (writes docs/api_probe.json)
+│   ├── ratelimit.py         #   blocking token-bucket limiter (5 req/s)
 │   └── xlsx_helpers.py      #   openpyxl header/style helpers
 │
 ├── taxonomies/              # domain knowledge (what counts as what)
@@ -170,7 +175,8 @@ upwork_demand_analysis/
 │       ├── exporter.py      #   6-sheet Excel
 │       └── api.py           #   public: run(days, fetch, limit)
 │
-├── tests/                   # 32 tests covering classifier, taxonomies, migration, parser
+├── tests/                   # 56 tests: client, probe, upsert, seed, classifier, taxonomies, migration
+│   └── fixtures/graphql/    #   recorded responses for offline runs (probe --offline, CI smoke)
 ├── .github/workflows/ci.yml # pytest + lint on every PR
 ├── pyproject.toml           # project metadata + pytest + ruff config
 ├── Makefile                 # one-line wrappers for everything
@@ -263,14 +269,14 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 ## Testing
 
 ```bash
-make test         # 32 tests in ~0.3s
+make test         # 56 tests in ~0.5s
 make test-cov     # with coverage report
 make lint         # ruff check + format
 ```
 
 Tests cover the regex taxonomies, the classifier behaviour against fixture jobs, the opportunity score formula across boundary inputs, migration idempotency on a fresh DB, and the GraphQL response parser.
 
-CI runs on every PR against Python 3.10/3.11/3.12 plus a smoke test that exercises `seed → n8n -n → skills` end-to-end without any API access.
+CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → n8n -n → skills → probe --offline` end-to-end without any API access.
 
 ---
 

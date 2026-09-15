@@ -3,9 +3,9 @@
 Tests use a per-test isolated SQLite file under tmp_path so they never
 touch the real `upwork_jobs.db`.
 """
+
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -26,8 +26,10 @@ def isolated_db(tmp_path, monkeypatch):
     import importlib
 
     import config as _config
+
     importlib.reload(_config)
     import db as _db
+
     importlib.reload(_db)
 
     return db_path

@@ -3,6 +3,7 @@
 Called from `main.py::cmd_n8n`. Encapsulates the fetch → analyze →
 render → export → persist pipeline.
 """
+
 from __future__ import annotations
 
 from rich.console import Console
@@ -21,11 +22,17 @@ def run(days: int = 7, fetch: bool = True, limit: int = 1000) -> None:
     init_db()
 
     if fetch:
-        from fetcher import fetch_jobs
+        from fetcher import GraphQLError, TransientError, fetch_jobs
 
         console.print(Rule("[bold cyan]Fetching n8n jobs from Upwork[/bold cyan]"))
-        n = fetch_jobs(search_term="n8n", limit=limit, since_days=days)
-        console.print(f"  [green]Fetched / refreshed[/green] {n} jobs from API.\n")
+        try:
+            n = fetch_jobs(search_term="n8n", limit=limit, since_days=days)
+            console.print(f"  [green]Fetched / refreshed[/green] {n} jobs from API.\n")
+        except (GraphQLError, TransientError, RuntimeError) as exc:
+            log.error("n8n fetch failed: %s", exc)
+            console.print(
+                f"  [yellow]Fetch failed:[/yellow] {exc}\n  [dim]Analyzing local data only.[/dim]\n"
+            )
 
     console.print(Rule(f"[bold cyan]n8n Demand · Last {days} days[/bold cyan]"))
     jobs = analyzer.load_n8n_jobs(days=days)

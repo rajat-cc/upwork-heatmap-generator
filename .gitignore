@@ -17,8 +17,10 @@ env/
 .env
 .token_cache.json
 
-# Database
+# Database (including SQLite WAL side files)
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 

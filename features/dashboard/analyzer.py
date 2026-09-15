@@ -9,11 +9,12 @@ Three independent analyses, each filtered by a `days`-window cutoff:
 Returns dict-shaped results to preserve the existing renderer/exporter
 contracts. A future refactor can dataclass these too.
 """
+
 from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytz
 
@@ -27,7 +28,7 @@ _TREND_MIN_SAMPLE = 5
 
 
 def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     full_cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     half_cutoff = (now - timedelta(days=days // 2)).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -60,10 +61,14 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
                 continue
             if sk not in aggregated:
                 aggregated[sk] = {
-                    "count_old": 0, "count_new": 0,
-                    "hourly_budgets": [], "fixed_budgets": [],
-                    "applicants": [], "tiers": defaultdict(int),
-                    "hourly_count": 0, "fixed_count": 0,
+                    "count_old": 0,
+                    "count_new": 0,
+                    "hourly_budgets": [],
+                    "fixed_budgets": [],
+                    "applicants": [],
+                    "tiers": defaultdict(int),
+                    "hourly_count": 0,
+                    "fixed_count": 0,
                 }
             d = aggregated[sk]
             if is_recent:
@@ -95,25 +100,29 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
             trend_pct = None
 
         tier_total = sum(d["tiers"].values()) or 1
-        avg_hourly = sum(d["hourly_budgets"]) / len(d["hourly_budgets"]) if d["hourly_budgets"] else 0
+        avg_hourly = (
+            sum(d["hourly_budgets"]) / len(d["hourly_budgets"]) if d["hourly_budgets"] else 0
+        )
         avg_fixed = sum(d["fixed_budgets"]) / len(d["fixed_budgets"]) if d["fixed_budgets"] else 0
         avg_proposals = sum(d["applicants"]) / len(d["applicants"]) if d["applicants"] else 0
 
         contract_total = d["hourly_count"] + d["fixed_count"]
         hourly_pct = round(d["hourly_count"] / contract_total * 100) if contract_total > 0 else 0
 
-        results.append({
-            "skill":        sk,
-            "count":        total,
-            "trend_pct":    trend_pct,
-            "avg_hourly":   avg_hourly,
-            "avg_fixed":    avg_fixed,
-            "hourly_pct":   hourly_pct,
-            "avg_proposals": avg_proposals,
-            "entry_pct":    round(d["tiers"].get("ENTRY_LEVEL", 0) / tier_total * 100),
-            "mid_pct":      round(d["tiers"].get("INTERMEDIATE", 0) / tier_total * 100),
-            "exp_pct":      round(d["tiers"].get("EXPERT", 0) / tier_total * 100),
-        })
+        results.append(
+            {
+                "skill": sk,
+                "count": total,
+                "trend_pct": trend_pct,
+                "avg_hourly": avg_hourly,
+                "avg_fixed": avg_fixed,
+                "hourly_pct": hourly_pct,
+                "avg_proposals": avg_proposals,
+                "entry_pct": round(d["tiers"].get("ENTRY_LEVEL", 0) / tier_total * 100),
+                "mid_pct": round(d["tiers"].get("INTERMEDIATE", 0) / tier_total * 100),
+                "exp_pct": round(d["tiers"].get("EXPERT", 0) / tier_total * 100),
+            }
+        )
 
     if results:
         max_count = max(r["count"] for r in results) or 1
@@ -133,7 +142,7 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
 
 
 def client_stats(days: int = 14) -> dict:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -145,10 +154,15 @@ def client_stats(days: int = 14) -> dict:
             [cutoff],
         ).fetchall()
 
-    country_data: dict[str, dict] = defaultdict(lambda: {
-        "count": 0, "verified": 0, "total_spent": 0.0,
-        "budgets": [], "hires": [],
-    })
+    country_data: dict[str, dict] = defaultdict(
+        lambda: {
+            "count": 0,
+            "verified": 0,
+            "total_spent": 0.0,
+            "budgets": [],
+            "hires": [],
+        }
+    )
 
     quality_buckets = {"champion": 0, "active": 0, "new": 0, "risky": 0}
     verified_total = 0
@@ -183,27 +197,29 @@ def client_stats(days: int = 14) -> dict:
         avg_budget = sum(d["budgets"]) / len(d["budgets"]) if d["budgets"] else 0
         avg_hires = sum(d["hires"]) / len(d["hires"]) if d["hires"] else 0
         verified_pct = round(d["verified"] / d["count"] * 100) if d["count"] else 0
-        countries.append({
-            "country":      country,
-            "count":        d["count"],
-            "verified_pct": verified_pct,
-            "avg_budget":   avg_budget,
-            "avg_hires":    avg_hires,
-        })
+        countries.append(
+            {
+                "country": country,
+                "count": d["count"],
+                "verified_pct": verified_pct,
+                "avg_budget": avg_budget,
+                "avg_hires": avg_hires,
+            }
+        )
 
     countries.sort(key=lambda x: x["count"], reverse=True)
 
     return {
-        "countries":    countries[:15],
-        "quality":      quality_buckets,
+        "countries": countries[:15],
+        "quality": quality_buckets,
         "verified_pct": round(verified_total / total * 100) if total else 0,
-        "total_jobs":   total,
+        "total_jobs": total,
     }
 
 
 def hourly_matrix(tz_name: str = "UTC", days: int = 14) -> list[list[float]]:
     tz = pytz.timezone(tz_name)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -229,16 +245,13 @@ def hourly_matrix(tz_name: str = "UTC", days: int = 14) -> list[list[float]]:
 
 def shift_recommendation(matrix: list[list[float]]) -> dict:
     weekday_matrix = matrix[:5]
-    hourly_avg = [
-        sum(weekday_matrix[wd][hr] for wd in range(5)) / 5
-        for hr in range(24)
-    ]
+    hourly_avg = [sum(weekday_matrix[wd][hr] for wd in range(5)) / 5 for hr in range(24)]
 
     window = 8
     doubled = hourly_avg + hourly_avg
     best_sum, shift_start = -1, 8
     for start in range(24):
-        window_sum = sum(doubled[start:start + window])
+        window_sum = sum(doubled[start : start + window])
         if window_sum > best_sum:
             best_sum = window_sum
             shift_start = start
@@ -251,11 +264,11 @@ def shift_recommendation(matrix: list[list[float]]) -> dict:
     worst_day = DAYS_OF_WEEK[day_totals.index(min(day_totals))]
 
     return {
-        "shift_start":  shift_start,
-        "shift_end":    shift_end,
-        "peak_hour":    peak_hour,
-        "peak_volume":  round(max(hourly_avg)) if hourly_avg else 0,
-        "best_day":     best_day,
-        "worst_day":    worst_day,
-        "hourly_avg":   hourly_avg,
+        "shift_start": shift_start,
+        "shift_end": shift_end,
+        "peak_hour": peak_hour,
+        "peak_volume": round(max(hourly_avg)) if hourly_avg else 0,
+        "best_day": best_day,
+        "worst_day": worst_day,
+        "hourly_avg": hourly_avg,
     }

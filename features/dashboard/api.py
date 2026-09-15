@@ -1,4 +1,5 @@
 """Public entry points for the general intelligence dashboard."""
+
 from __future__ import annotations
 
 import sys
@@ -10,12 +11,17 @@ from rich.rule import Rule
 from core.logging_setup import get_logger
 from db import get_date_range, get_total_jobs, init_db
 from features.dashboard.analyzer import (
-    client_stats, hourly_matrix, shift_recommendation, skills_stats,
+    client_stats,
+    hourly_matrix,
+    shift_recommendation,
+    skills_stats,
 )
 from features.dashboard.exporter import export_dashboard
 from features.dashboard.renderer import (
-    render_client_intelligence, render_shift_recommendation,
-    render_skills_heatmap, render_volume_heatmap,
+    render_client_intelligence,
+    render_shift_recommendation,
+    render_skills_heatmap,
+    render_volume_heatmap,
 )
 
 console = Console()
@@ -91,6 +97,7 @@ def run_shift_only(days: int, tz: str) -> None:
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+
 def _require_data() -> None:
     if get_total_jobs() == 0:
         console.print("[yellow]Database is empty.[/yellow]\n")
@@ -101,11 +108,11 @@ def _require_data() -> None:
 
 def _export(tz: str, days: int, categories: list | None = None) -> None:
     try:
-        stats  = skills_stats(days=days, categories=categories or None)
-        cs     = client_stats(days=days)
+        stats = skills_stats(days=days, categories=categories or None)
+        cs = client_stats(days=days)
         matrix = hourly_matrix(tz_name=tz, days=days)
-        rec    = shift_recommendation(matrix)
-        path   = export_dashboard(stats, cs, matrix, rec, tz_name=tz, days=days)
+        rec = shift_recommendation(matrix)
+        path = export_dashboard(stats, cs, matrix, rec, tz_name=tz, days=days)
         console.print(f"  [dim]Excel export:[/dim]  [cyan]{path}[/cyan]\n")
     except Exception as exc:
         log.exception("Dashboard Excel export failed")

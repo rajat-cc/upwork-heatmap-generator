@@ -4,6 +4,7 @@ Used by every classifier so substring-style false positives ("ai" inside
 "main") are impossible. Compilation happens once at import time of the
 calling module.
 """
+
 from __future__ import annotations
 
 import re

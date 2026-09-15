@@ -1,4 +1,5 @@
 """Classification + opportunity scoring for n8n jobs."""
+
 from __future__ import annotations
 
 from core.models import Job
@@ -7,17 +8,17 @@ from taxonomies.compile import compile_taxonomy, match_categories
 from taxonomies.n8n import INDUSTRIES, STACKS, WORKFLOWS
 
 INDUSTRIES_RE = compile_taxonomy(INDUSTRIES)
-WORKFLOWS_RE  = compile_taxonomy(WORKFLOWS)
-STACKS_RE     = compile_taxonomy(STACKS)
+WORKFLOWS_RE = compile_taxonomy(WORKFLOWS)
+STACKS_RE = compile_taxonomy(STACKS)
 
 
 def classify(job: Job) -> None:
     """Mutate `job` in place: assign industries / workflows / stacks / opp_score."""
     text = job.haystack
     job.industries = match_categories(text, INDUSTRIES_RE)
-    job.workflows  = match_categories(text, WORKFLOWS_RE)
-    job.stacks     = match_categories(text, STACKS_RE)
-    job.opp_score  = opportunity_score(job)
+    job.workflows = match_categories(text, WORKFLOWS_RE)
+    job.stacks = match_categories(text, STACKS_RE)
+    job.opp_score = opportunity_score(job)
 
 
 def opportunity_score(job: Job) -> float:

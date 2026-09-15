@@ -3,19 +3,28 @@
 Each fixture is a "what we'd expect to see" assertion — if these break,
 either the regex needs updating OR the classification has regressed.
 """
+
 import pytest
 
 from core.models import Job
-from features.n8n.classifier import classify, opportunity_score
+from features.n8n.classifier import classify
 
 
 def _make_job(**overrides) -> Job:
-    base = dict(
-        id="j1", title="", description="", url="https://www.upwork.com/jobs/j1",
-        published_at="2026-01-01T00:00:00", category="dev", contractor_tier="EXPERT",
-        budget_type="HOURLY", budget_amount=50.0, budget_min=40.0, budget_max=60.0,
-        skills=["n8n"],
-    )
+    base = {
+        "id": "j1",
+        "title": "",
+        "description": "",
+        "url": "https://www.upwork.com/jobs/j1",
+        "published_at": "2026-01-01T00:00:00",
+        "category": "dev",
+        "contractor_tier": "EXPERT",
+        "budget_type": "HOURLY",
+        "budget_amount": 50.0,
+        "budget_min": 40.0,
+        "budget_max": 60.0,
+        "skills": ["n8n"],
+    }
     base.update(overrides)
     return Job(**base)
 
@@ -30,7 +39,6 @@ def test_voice_agent_for_dental_clinic():
     assert "Voice / Telephony" in j.workflows
     assert "Calendar / Scheduling" in j.workflows
     assert "Vapi" in j.stacks or "Retell" in j.stacks
-    assert "Google Sheets" in j.stacks or "Calendly" in j.stacks or True  # cal.com etc OK
 
 
 def test_marketing_agency_lead_gen():
@@ -62,8 +70,7 @@ def test_unclassified_when_no_keyword_fires():
 
 
 def test_opp_score_in_valid_range():
-    j = _make_job(budget_type="FIXED", budget_amount=5000.0,
-                  client_verified=1, total_applicants=5)
+    j = _make_job(budget_type="FIXED", budget_amount=5000.0, client_verified=1, total_applicants=5)
     classify(j)
     assert 0 <= j.opp_score <= 100
 
@@ -72,12 +79,20 @@ def test_opp_score_orders_by_quality():
     """A verified $5k fixed job with few proposals must outscore a cheap unverified
     hourly with many proposals."""
     high = _make_job(
-        id="high", budget_type="FIXED", budget_amount=5000.0,
-        client_verified=1, total_applicants=3,
+        id="high",
+        budget_type="FIXED",
+        budget_amount=5000.0,
+        client_verified=1,
+        total_applicants=3,
     )
     low = _make_job(
-        id="low", budget_type="HOURLY", budget_min=8.0, budget_max=12.0,
-        budget_amount=10.0, client_verified=0, total_applicants=80,
+        id="low",
+        budget_type="HOURLY",
+        budget_min=8.0,
+        budget_max=12.0,
+        budget_amount=10.0,
+        client_verified=0,
+        total_applicants=80,
     )
     classify(high)
     classify(low)
@@ -86,21 +101,31 @@ def test_opp_score_orders_by_quality():
 
 def test_opp_score_unknown_budget_gets_baseline():
     """Jobs with no budget signal still get a score (~30s)."""
-    j = _make_job(budget_type="UNKNOWN", budget_amount=0.0,
-                  budget_min=0.0, budget_max=0.0,
-                  client_verified=1, total_applicants=10)
+    j = _make_job(
+        budget_type="UNKNOWN",
+        budget_amount=0.0,
+        budget_min=0.0,
+        budget_max=0.0,
+        client_verified=1,
+        total_applicants=10,
+    )
     classify(j)
     assert 20 < j.opp_score < 80
 
 
-@pytest.mark.parametrize("budget,expected_min", [
-    (1000, 30),    # $1k fixed → at least 30
-    (5000, 50),    # $5k fixed → at least 50
-    (10000, 60),   # $10k fixed → above 60
-])
+@pytest.mark.parametrize(
+    "budget,expected_min",
+    [
+        (1000, 30),  # $1k fixed → at least 30
+        (5000, 50),  # $5k fixed → at least 50
+        (10000, 60),  # $10k fixed → above 60
+    ],
+)
 def test_higher_budget_higher_score(budget, expected_min):
-    j = _make_job(budget_type="FIXED", budget_amount=float(budget),
-                  client_verified=1, total_applicants=10)
+    j = _make_job(
+        budget_type="FIXED", budget_amount=float(budget), client_verified=1, total_applicants=10
+    )
     classify(j)
-    assert j.opp_score >= expected_min, \
+    assert j.opp_score >= expected_min, (
         f"${budget} fixed scored {j.opp_score}, expected >= {expected_min}"
+    )

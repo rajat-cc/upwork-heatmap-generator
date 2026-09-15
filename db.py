@@ -15,10 +15,11 @@ Design notes:
 - Migrations are tracked in `schema_meta` and applied idempotently so older
   databases upgrade transparently.
 """
+
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from config import DB_PATH
 
@@ -150,8 +151,9 @@ END;
 
 # ─── Migrations ─────────────────────────────────────────────────────────────
 
+
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _legacy_columns(conn) -> set:
@@ -164,23 +166,23 @@ def _ensure_legacy_columns(conn):
     if not cols:
         return  # fresh DB, base schema will handle it
     legacy_adds = {
-        "description":            "TEXT NOT NULL DEFAULT ''",
-        "url":                    "TEXT NOT NULL DEFAULT ''",
-        "budget_min":             "REAL DEFAULT 0",
-        "budget_max":             "REAL DEFAULT 0",
-        "total_applicants":       "INTEGER DEFAULT 0",
-        "client_total_hires":     "INTEGER DEFAULT 0",
-        "client_total_spent":     "REAL DEFAULT 0",
-        "client_verified":        "INTEGER DEFAULT 0",
-        "client_feedback":        "REAL DEFAULT 0",
-        "client_country":         "TEXT DEFAULT ''",
-        "is_premium":             "INTEGER DEFAULT 0",
-        "is_enterprise":          "INTEGER DEFAULT 0",
-        "duration_label":         "TEXT DEFAULT ''",
-        "first_seen_at":          "TEXT",
-        "last_fetched_at":        "TEXT",
-        "fetch_count":            "INTEGER DEFAULT 1",
-        "discovered_via_search":  "TEXT DEFAULT ''",
+        "description": "TEXT NOT NULL DEFAULT ''",
+        "url": "TEXT NOT NULL DEFAULT ''",
+        "budget_min": "REAL DEFAULT 0",
+        "budget_max": "REAL DEFAULT 0",
+        "total_applicants": "INTEGER DEFAULT 0",
+        "client_total_hires": "INTEGER DEFAULT 0",
+        "client_total_spent": "REAL DEFAULT 0",
+        "client_verified": "INTEGER DEFAULT 0",
+        "client_feedback": "REAL DEFAULT 0",
+        "client_country": "TEXT DEFAULT ''",
+        "is_premium": "INTEGER DEFAULT 0",
+        "is_enterprise": "INTEGER DEFAULT 0",
+        "duration_label": "TEXT DEFAULT ''",
+        "first_seen_at": "TEXT",
+        "last_fetched_at": "TEXT",
+        "fetch_count": "INTEGER DEFAULT 1",
+        "discovered_via_search": "TEXT DEFAULT ''",
     }
     for col, defn in legacy_adds.items():
         if col not in cols:
@@ -205,28 +207,35 @@ def _record_migration(conn, version: int, description: str):
 # Each migration runs idempotently and once per version.
 # New migrations: add a function and a (version, callable, description) entry.
 
+
 def _migration_1_backfill_tracking_cols(conn):
     """Backfill first_seen_at / last_fetched_at / url / fetch_count for rows
     that pre-date the new schema (or were inserted from a legacy fetched_at)."""
     legacy_fetched = "fetched_at" in _legacy_columns(conn)
     if legacy_fetched:
         # Use the old fetched_at as both first_seen_at and last_fetched_at.
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE jobs
                SET first_seen_at   = COALESCE(NULLIF(first_seen_at, ''), fetched_at, ?),
                    last_fetched_at = COALESCE(NULLIF(last_fetched_at, ''), fetched_at, ?)
              WHERE first_seen_at IS NULL OR first_seen_at = ''
                 OR last_fetched_at IS NULL OR last_fetched_at = ''
-        """, (_now_iso(), _now_iso()))
+        """,
+            (_now_iso(), _now_iso()),
+        )
     else:
         ts = _now_iso()
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE jobs
                SET first_seen_at   = COALESCE(NULLIF(first_seen_at, ''), ?),
                    last_fetched_at = COALESCE(NULLIF(last_fetched_at, ''), ?)
              WHERE first_seen_at IS NULL OR first_seen_at = ''
                 OR last_fetched_at IS NULL OR last_fetched_at = ''
-        """, (ts, ts))
+        """,
+            (ts, ts),
+        )
 
     # Backfill url for rows missing it.
     conn.execute("""
@@ -263,12 +272,13 @@ def _migration_3_seed_fts(conn):
 
 
 MIGRATIONS = [
-    (1, _migration_1_backfill_tracking_cols,
-     "Backfill first_seen_at / last_fetched_at / url / fetch_count"),
-    (2, _migration_2_normalise_skills,
-     "Populate job_skills from JSON blobs"),
-    (3, _migration_3_seed_fts,
-     "Seed jobs_fts from existing rows"),
+    (
+        1,
+        _migration_1_backfill_tracking_cols,
+        "Backfill first_seen_at / last_fetched_at / url / fetch_count",
+    ),
+    (2, _migration_2_normalise_skills, "Populate job_skills from JSON blobs"),
+    (3, _migration_3_seed_fts, "Seed jobs_fts from existing rows"),
 ]
 
 
@@ -306,7 +316,7 @@ def init_db():
         # 3) Run any pending migrations that touch jobs rows BEFORE FTS exists.
         applied = _current_version(conn)
         for version, fn, desc in MIGRATIONS:
-            if version > applied and version < 3:   # FTS-related migrations are >=3
+            if version > applied and version < 3:  # FTS-related migrations are >=3
                 _run_migration_safely(conn, version, fn, desc)
 
         # 4) Now create FTS table + triggers (table is empty until rebuild).
@@ -321,6 +331,33 @@ def init_db():
 
 
 # ─── Writes ─────────────────────────────────────────────────────────────────
+
+# Every column the INSERT below binds by name. Callers may pass partial dicts
+# (the demo seeder, event ingest); missing keys take these defaults instead of
+# raising `ProgrammingError`.
+JOB_DEFAULTS: dict = {
+    "title": "",
+    "description": "",
+    "url": "",
+    "published_at": "",
+    "category": "",
+    "contractor_tier": "UNKNOWN",
+    "budget_type": "UNKNOWN",
+    "budget_amount": 0.0,
+    "budget_min": 0.0,
+    "budget_max": 0.0,
+    "skills": "[]",
+    "total_applicants": 0,
+    "client_total_hires": 0,
+    "client_total_spent": 0.0,
+    "client_verified": 0,
+    "client_feedback": 0.0,
+    "client_country": "",
+    "is_premium": 0,
+    "is_enterprise": 0,
+    "duration_label": "",
+}
+
 
 def upsert_jobs(jobs: list, search_term: str = "") -> tuple[int, int]:
     """Insert-or-update jobs. Returns (total_written, new_inserts).
@@ -337,13 +374,15 @@ def upsert_jobs(jobs: list, search_term: str = "") -> tuple[int, int]:
     now = _now_iso()
     new_count = 0
     with get_conn() as conn:
-        for j in jobs:
+        for raw in jobs:
+            j = {**JOB_DEFAULTS, **raw}
             j["url"] = j.get("url") or f"https://www.upwork.com/jobs/{j['id']}"
             j["first_seen_at"] = now
             j["last_fetched_at"] = now
             j["discovered_via_search"] = search_term
 
-            cur = conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO jobs (
                     id, title, description, url, published_at, category, contractor_tier,
                     budget_type, budget_amount, budget_min, budget_max, skills,
@@ -383,13 +422,12 @@ def upsert_jobs(jobs: list, search_term: str = "") -> tuple[int, int]:
                     last_fetched_at    = excluded.last_fetched_at,
                     fetch_count        = jobs.fetch_count + 1
                     -- first_seen_at and discovered_via_search are preserved
-            """, j)
+            """,
+                j,
+            )
 
-            # cur.rowcount is unreliable for ON CONFLICT; check via lastrowid changes
-            # Simpler: detect new vs update by checking fetch_count after.
-            row = conn.execute(
-                "SELECT fetch_count FROM jobs WHERE id = ?", (j["id"],)
-            ).fetchone()
+            # rowcount is unreliable for ON CONFLICT; a fresh row has fetch_count == 1.
+            row = conn.execute("SELECT fetch_count FROM jobs WHERE id = ?", (j["id"],)).fetchone()
             if row and row[0] == 1:
                 new_count += 1
 
@@ -410,6 +448,7 @@ def upsert_jobs(jobs: list, search_term: str = "") -> tuple[int, int]:
 
 # ─── Fetch-run observability ────────────────────────────────────────────────
 
+
 def start_fetch_run(search_term: str = "", category: str = "") -> int:
     with get_conn() as conn:
         cur = conn.execute(
@@ -429,6 +468,7 @@ def finish_fetch_run(run_id: int, jobs_seen: int, jobs_new: int, status: str = "
 
 # ─── Classification cache ───────────────────────────────────────────────────
 
+
 def save_classifications(rows: list[dict]):
     """Persist classification results.
 
@@ -438,8 +478,7 @@ def save_classifications(rows: list[dict]):
         return
     now = _now_iso()
     payload = [
-        (r["job_id"], r["axis"], r["label"], r["source"],
-         r.get("confidence", 1.0), now)
+        (r["job_id"], r["axis"], r["label"], r["source"], r.get("confidence", 1.0), now)
         for r in rows
     ]
     with get_conn() as conn:
@@ -471,6 +510,7 @@ def load_classifications(job_ids: list[str], source: str = None) -> dict:
 
 # ─── Reads ──────────────────────────────────────────────────────────────────
 
+
 def get_total_jobs() -> int:
     with get_conn() as conn:
         return conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
@@ -478,9 +518,7 @@ def get_total_jobs() -> int:
 
 def get_date_range() -> tuple:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT MIN(published_at), MAX(published_at) FROM jobs"
-        ).fetchone()
+        row = conn.execute("SELECT MIN(published_at), MAX(published_at) FROM jobs").fetchone()
         return (row[0] or "N/A", row[1] or "N/A")
 
 

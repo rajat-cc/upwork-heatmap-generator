@@ -3,30 +3,31 @@ from datetime import datetime
 
 from openpyxl import Workbook
 from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
-from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 EXPORTS_DIR = "exports"
 DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # ── Palette ──────────────────────────────────────────────────────────────────
-_HDR_FILL   = PatternFill("solid", fgColor="1F3864")   # dark navy
-_HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
-_ALT_FILL   = PatternFill("solid", fgColor="EEF2F7")   # light blue-grey
-_BOLD       = Font(bold=True, size=10)
-_NORMAL     = Font(size=10)
-_CENTER     = Alignment(horizontal="center", vertical="center")
-_LEFT       = Alignment(horizontal="left",   vertical="center")
-_RIGHT      = Alignment(horizontal="right",  vertical="center")
-_THIN       = Side(style="thin", color="CCCCCC")
-_BORDER     = Border(bottom=_THIN)
+_HDR_FILL = PatternFill("solid", fgColor="1F3864")  # dark navy
+_HDR_FONT = Font(bold=True, color="FFFFFF", size=10)
+_ALT_FILL = PatternFill("solid", fgColor="EEF2F7")  # light blue-grey
+_BOLD = Font(bold=True, size=10)
+_NORMAL = Font(size=10)
+_CENTER = Alignment(horizontal="center", vertical="center")
+_LEFT = Alignment(horizontal="left", vertical="center")
+_RIGHT = Alignment(horizontal="right", vertical="center")
+_THIN = Side(style="thin", color="CCCCCC")
+_BORDER = Border(bottom=_THIN)
 
 _GREEN_FILL = PatternFill("solid", fgColor="D6EAD6")
-_RED_FILL   = PatternFill("solid", fgColor="F4CCCC")
-_YLW_FILL   = PatternFill("solid", fgColor="FFF2CC")
+_RED_FILL = PatternFill("solid", fgColor="F4CCCC")
+_YLW_FILL = PatternFill("solid", fgColor="FFF2CC")
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
+
 
 def export_dashboard(
     skills_data: list,
@@ -59,18 +60,40 @@ def export_dashboard(
 
 # ── Sheet builders ────────────────────────────────────────────────────────────
 
+
 def _sheet_skills(wb: Workbook, data: list, days: int):
     ws = wb.create_sheet("Skills Demand")
     ws.freeze_panes = "A2"
 
     headers = [
-        "#", "Skill", "Jobs", "Trend %", "Opp Score",
-        "Avg Proposals", "Avg Hourly ($)", "Avg Fixed ($)",
-        "% Hourly", "Entry %", "Mid %", "Expert %",
+        "#",
+        "Skill",
+        "Jobs",
+        "Trend %",
+        "Opp Score",
+        "Avg Proposals",
+        "Avg Hourly ($)",
+        "Avg Fixed ($)",
+        "% Hourly",
+        "Entry %",
+        "Mid %",
+        "Expert %",
     ]
     col_widths = [4, 22, 8, 10, 10, 14, 14, 14, 10, 9, 9, 9]
-    col_aligns = [_CENTER, _LEFT, _RIGHT, _RIGHT, _RIGHT,
-                  _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT]
+    col_aligns = [
+        _CENTER,
+        _LEFT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+        _RIGHT,
+    ]
 
     _write_header(ws, headers, col_widths)
 
@@ -86,14 +109,14 @@ def _sheet_skills(wb: Workbook, data: list, days: int):
             trend_str,
             row["opportunity_score"],
             round(row["avg_proposals"], 1) if row["avg_proposals"] else 0,
-            round(row["avg_hourly"],    2) if row["avg_hourly"]    else 0,
-            round(row["avg_fixed"],     2) if row["avg_fixed"]     else 0,
+            round(row["avg_hourly"], 2) if row["avg_hourly"] else 0,
+            round(row["avg_fixed"], 2) if row["avg_fixed"] else 0,
             row["hourly_pct"],
             row["entry_pct"],
             row["mid_pct"],
             row["exp_pct"],
         ]
-        for c, (val, align) in enumerate(zip(values, col_aligns), 1):
+        for c, (val, align) in enumerate(zip(values, col_aligns, strict=False), 1):
             cell = ws.cell(row=r, column=c, value=val)
             cell.alignment = align
             cell.font = _NORMAL
@@ -105,16 +128,21 @@ def _sheet_skills(wb: Workbook, data: list, days: int):
     ws.conditional_formatting.add(
         f"E2:E{last}",
         ColorScaleRule(
-            start_type="num", start_value=0,  start_color="F4CCCC",
-            mid_type="num",   mid_value=45,   mid_color="FFF2CC",
-            end_type="num",   end_value=100,  end_color="D6EAD6",
+            start_type="num",
+            start_value=0,
+            start_color="F4CCCC",
+            mid_type="num",
+            mid_value=45,
+            mid_color="FFF2CC",
+            end_type="num",
+            end_value=100,
+            end_color="D6EAD6",
         ),
     )
     # Data bar for Jobs (col C = 3)
     ws.conditional_formatting.add(
         f"C2:C{last}",
-        DataBarRule(start_type="min", end_type="max",
-                    color="4472C4", showValue=True),
+        DataBarRule(start_type="min", end_type="max", color="4472C4", showValue=True),
     )
 
     ws.sheet_properties.tabColor = "1F3864"
@@ -135,9 +163,9 @@ def _sheet_client_quality(wb: Workbook, cs: dict, days: int):
     total = sum(q.values()) or 1
     segments = [
         ("Champion", q.get("champion", 0), "Verified, $10k+ spent, 5+ hires"),
-        ("Active",   q.get("active",   0), "Verified, ≥1 hire"),
-        ("New",      q.get("new",      0), "Verified, never hired"),
-        ("Risky",    q.get("risky",    0), "Unverified or 0 hires"),
+        ("Active", q.get("active", 0), "Verified, ≥1 hire"),
+        ("New", q.get("new", 0), "Verified, never hired"),
+        ("Risky", q.get("risky", 0), "Unverified or 0 hires"),
     ]
     seg_fills = [
         PatternFill("solid", fgColor="D6EAD6"),  # champion — green
@@ -145,11 +173,11 @@ def _sheet_client_quality(wb: Workbook, cs: dict, days: int):
         PatternFill("solid", fgColor="FFF2CC"),  # new      — yellow
         PatternFill("solid", fgColor="F4CCCC"),  # risky    — red
     ]
-    for i, ((label, count, defn), fill) in enumerate(zip(segments, seg_fills), 2):
+    for i, ((label, count, defn), fill) in enumerate(zip(segments, seg_fills, strict=False), 2):
         pct = round(count / total * 100)
         row_vals = [label, count, pct, defn]
         row_aligns = [_LEFT, _RIGHT, _RIGHT, _LEFT]
-        for c, (val, align) in enumerate(zip(row_vals, row_aligns), 1):
+        for c, (val, align) in enumerate(zip(row_vals, row_aligns, strict=False), 1):
             cell = ws.cell(row=i, column=c, value=val)
             cell.fill = fill
             cell.alignment = align
@@ -180,10 +208,10 @@ def _sheet_client_countries(wb: Workbook, cs: dict):
             c_data["country"],
             c_data["count"],
             c_data["verified_pct"],
-            round(c_data["avg_hires"],  1) if c_data["avg_hires"]  else 0,
+            round(c_data["avg_hires"], 1) if c_data["avg_hires"] else 0,
             round(c_data["avg_budget"], 2) if c_data["avg_budget"] else 0,
         ]
-        for col, (val, align) in enumerate(zip(values, col_aligns), 1):
+        for col, (val, align) in enumerate(zip(values, col_aligns, strict=False), 1):
             cell = ws.cell(row=r, column=col, value=val)
             cell.alignment = align
             cell.font = _NORMAL
@@ -195,9 +223,15 @@ def _sheet_client_countries(wb: Workbook, cs: dict):
     ws.conditional_formatting.add(
         f"C2:C{last}",
         ColorScaleRule(
-            start_type="num", start_value=0,   start_color="F4CCCC",
-            mid_type="num",   mid_value=50,    mid_color="FFF2CC",
-            end_type="num",   end_value=100,   end_color="D6EAD6",
+            start_type="num",
+            start_value=0,
+            start_color="F4CCCC",
+            mid_type="num",
+            mid_value=50,
+            mid_color="FFF2CC",
+            end_type="num",
+            end_value=100,
+            end_color="D6EAD6",
         ),
     )
     _style_title_row(ws, 1, len(headers), "Top Client Countries")
@@ -242,14 +276,22 @@ def _sheet_volume_heatmap(wb: Workbook, matrix: list, tz_name: str, days: int):
     ws.conditional_formatting.add(
         "B2:Y8",
         ColorScaleRule(
-            start_type="min", start_color="FFFFFF",
-            mid_type="percentile", mid_value=50, mid_color="FFD966",
-            end_type="max",   end_color="C00000",
+            start_type="min",
+            start_color="FFFFFF",
+            mid_type="percentile",
+            mid_value=50,
+            mid_color="FFD966",
+            end_type="max",
+            end_color="C00000",
         ),
     )
-    _style_title_row(ws, 1, total_col,
-                     f"Job Posting Volume (avg jobs/hr)  ·  {tz_name}  ·  Last {days} days",
-                     insert=False)
+    _style_title_row(
+        ws,
+        1,
+        total_col,
+        f"Job Posting Volume (avg jobs/hr)  ·  {tz_name}  ·  Last {days} days",
+        insert=False,
+    )
 
 
 def _sheet_shift_summary(wb: Workbook, rec: dict, tz_name: str):
@@ -258,12 +300,13 @@ def _sheet_shift_summary(wb: Workbook, rec: dict, tz_name: str):
     ws.column_dimensions["B"].width = 30
 
     rows = [
-        ("Recommended BD Shift",
-         f"{rec['shift_start']:02d}:00 – {rec['shift_end']:02d}:59  ({tz_name})"),
-        ("Peak Hour",
-         f"{rec['peak_hour']:02d}:00  ({rec['peak_volume']} avg jobs/hr)"),
-        ("Busiest Day",  rec["best_day"]),
-        ("Slowest Day",  rec["worst_day"]),
+        (
+            "Recommended BD Shift",
+            f"{rec['shift_start']:02d}:00 – {rec['shift_end']:02d}:59  ({tz_name})",
+        ),
+        ("Peak Hour", f"{rec['peak_hour']:02d}:00  ({rec['peak_volume']} avg jobs/hr)"),
+        ("Busiest Day", rec["best_day"]),
+        ("Slowest Day", rec["worst_day"]),
     ]
 
     fills = [
@@ -273,7 +316,7 @@ def _sheet_shift_summary(wb: Workbook, rec: dict, tz_name: str):
         PatternFill("solid", fgColor="F4CCCC"),  # slowest — red
     ]
 
-    for i, ((label, value), fill) in enumerate(zip(rows, fills), 2):
+    for i, ((label, value), fill) in enumerate(zip(rows, fills, strict=False), 2):
         lc = ws.cell(row=i, column=1, value=label)
         vc = ws.cell(row=i, column=2, value=value)
         for cell in (lc, vc):
@@ -292,8 +335,10 @@ def _sheet_shift_summary(wb: Workbook, rec: dict, tz_name: str):
     ws.conditional_formatting.add(
         f"A9:{get_column_letter(24)}9",
         ColorScaleRule(
-            start_type="min", start_color="FFFFFF",
-            end_type="max",   end_color="4472C4",
+            start_type="min",
+            start_color="FFFFFF",
+            end_type="max",
+            end_color="4472C4",
         ),
     )
 
@@ -303,6 +348,7 @@ def _sheet_shift_summary(wb: Workbook, rec: dict, tz_name: str):
 
 # ── Styling helpers ───────────────────────────────────────────────────────────
 
+
 def _hdr_style(cell):
     cell.fill = _HDR_FILL
     cell.font = _HDR_FONT
@@ -310,7 +356,7 @@ def _hdr_style(cell):
 
 
 def _write_header(ws, headers: list, col_widths: list):
-    for c, (h, w) in enumerate(zip(headers, col_widths), 1):
+    for c, (h, w) in enumerate(zip(headers, col_widths, strict=False), 1):
         cell = ws.cell(row=1, column=c, value=h)
         _hdr_style(cell)
         ws.column_dimensions[get_column_letter(c)].width = w
