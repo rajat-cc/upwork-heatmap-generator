@@ -9,8 +9,13 @@ from pathlib import Path
 import requests
 
 from config import (
-    ACCESS_TOKEN, AUTH_URL, CLIENT_ID, CLIENT_SECRET,
-    REDIRECT_URI, TOKEN_CACHE_FILE, TOKEN_URL,
+    ACCESS_TOKEN,
+    AUTH_URL,
+    CLIENT_ID,
+    CLIENT_SECRET,
+    REDIRECT_URI,
+    TOKEN_CACHE_FILE,
+    TOKEN_URL,
 )
 
 
@@ -45,18 +50,22 @@ def run_auth_flow() -> str:
         raise RuntimeError("Set UPWORK_CLIENT_ID and UPWORK_CLIENT_SECRET in .env first.")
 
     state = secrets.token_urlsafe(16)
-    auth_params = urllib.parse.urlencode({
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "state": state,
-    })
+    auth_params = urllib.parse.urlencode(
+        {
+            "client_id": CLIENT_ID,
+            "redirect_uri": REDIRECT_URI,
+            "response_type": "code",
+            "state": state,
+        }
+    )
     full_auth_url = f"{AUTH_URL}?{auth_params}"
 
     # Determine if we can use a local server or need manual code entry
-    is_localhost = REDIRECT_URI.startswith("http://localhost") or REDIRECT_URI.startswith("http://127.0.0.1")
+    is_localhost = REDIRECT_URI.startswith("http://localhost") or REDIRECT_URI.startswith(
+        "http://127.0.0.1"
+    )
 
-    print(f"\n  Opening browser for Upwork authorization...")
+    print("\n  Opening browser for Upwork authorization...")
     print(f"  If browser doesn't open, visit:\n  {full_auth_url}\n")
     webbrowser.open(full_auth_url)
 
@@ -126,6 +135,24 @@ def _exchange_code(code: str) -> str:
     return data["access_token"]
 
 
+def force_refresh() -> str:
+    """Refresh with the cached refresh token, ignoring `expires_at`.
+
+    Used by the GraphQL client after a 401/403 or a "token rejected" error
+    mid-run: the cached expiry can be wrong when Upwork revokes early.
+    """
+    if ACCESS_TOKEN:
+        return ACCESS_TOKEN  # a static token from .env cannot be refreshed
+
+    cache = Path(TOKEN_CACHE_FILE)
+    if cache.exists():
+        cached = json.loads(cache.read_text())
+        if cached.get("refresh_token"):
+            return _refresh(cached["refresh_token"])
+
+    raise RuntimeError("\n[!] No refresh token available. Run:  make auth\n")
+
+
 def _refresh(refresh_token: str) -> str:
     resp = requests.post(
         TOKEN_URL,
@@ -138,9 +165,13 @@ def _refresh(refresh_token: str) -> str:
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=15,
     )
-    if resp.status_code != 200:
+    if resp.status_code in (400, 401):
+        # invalid_grant: the refresh token itself is expired or revoked.
         Path(TOKEN_CACHE_FILE).unlink(missing_ok=True)
-        raise RuntimeError("Refresh token expired. Run:  make auth")
+        raise RuntimeError("Refresh token expired or revoked. Run:  make auth")
+    if resp.status_code != 200:
+        # Transient token-endpoint failure: keep the cache so the next run can retry.
+        raise RuntimeError(f"Token refresh failed with HTTP {resp.status_code}; retry later")
     data = resp.json()
     data["expires_at"] = time.time() + data.get("expires_in", 3600)
     Path(TOKEN_CACHE_FILE).write_text(json.dumps(data, indent=2))

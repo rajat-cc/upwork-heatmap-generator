@@ -3,6 +3,7 @@
 If Upwork ever changes their schema, this test breaks loudly — we'd
 rather know on the test than discover it via silently NULL DB columns.
 """
+
 from fetcher import _parse_job
 
 # Minimised version of a real GraphQL response node.
@@ -33,7 +34,7 @@ SAMPLE_NODE = {
 
 
 def test_parse_node_returns_expected_dict():
-    out = _parse_job(SAMPLE_NODE, override_category="dev")
+    out = _parse_job(SAMPLE_NODE)
 
     assert out["id"] == "~01abc"
     assert out["title"].startswith("Build n8n")
@@ -43,30 +44,34 @@ def test_parse_node_returns_expected_dict():
     assert out["budget_type"] == "HOURLY"
     assert out["budget_min"] == 40.0
     assert out["budget_max"] == 80.0
-    assert out["budget_amount"] == 60.0      # midpoint
+    assert out["budget_amount"] == 60.0  # midpoint
     assert out["client_verified"] == 1
     assert out["client_country"] == "United States"
     assert out["client_total_hires"] == 7
     assert out["client_total_spent"] == 12500.0
-    assert out["category"] == "dev"           # override_category wins
+    assert out["category"] == "Web, Mobile & Software Dev"
     assert out["contractor_tier"] == "EXPERT"
 
 
 def test_parse_handles_fixed_budget():
-    node = {**SAMPLE_NODE,
-            "amount": {"rawValue": "2500"},
-            "hourlyBudgetMin": {"rawValue": None},
-            "hourlyBudgetMax": {"rawValue": None}}
+    node = {
+        **SAMPLE_NODE,
+        "amount": {"rawValue": "2500"},
+        "hourlyBudgetMin": {"rawValue": None},
+        "hourlyBudgetMax": {"rawValue": None},
+    }
     out = _parse_job(node)
     assert out["budget_type"] == "FIXED"
     assert out["budget_amount"] == 2500.0
 
 
 def test_parse_handles_no_budget():
-    node = {**SAMPLE_NODE,
-            "amount": {"rawValue": None},
-            "hourlyBudgetMin": {"rawValue": None},
-            "hourlyBudgetMax": {"rawValue": None}}
+    node = {
+        **SAMPLE_NODE,
+        "amount": {"rawValue": None},
+        "hourlyBudgetMin": {"rawValue": None},
+        "hourlyBudgetMax": {"rawValue": None},
+    }
     out = _parse_job(node)
     assert out["budget_type"] == "UNKNOWN"
     assert out["budget_amount"] == 0.0
