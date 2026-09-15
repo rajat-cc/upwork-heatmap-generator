@@ -7,7 +7,7 @@ LIMIT     ?= 1000
 BACKUPS_DIR ?= backups
 
 .PHONY: help setup setup-dev auth seed dashboard skills shift watch fetch \
-        n8n n8n-local test test-cov lint backup clean
+        n8n n8n-local probe test test-cov lint backup clean
 
 help:
 	@echo ""
@@ -26,6 +26,7 @@ help:
 	@echo "  make n8n                   — fetch + analyze n8n jobs (default 7d)"
 	@echo "  make n8n N8N_DAYS=14       — same, custom window"
 	@echo "  make n8n-local             — re-analyze local DB only (no fetch)"
+	@echo "  make probe                 — check which API queries/fields this key can use"
 	@echo ""
 	@echo "  make test                  — run pytest"
 	@echo "  make test-cov              — pytest with coverage report"
@@ -55,6 +56,7 @@ shift:       ; $(PY) main.py shift $(DAYS) -t $(TZ)
 watch:       ; $(PY) main.py dashboard $(DAYS) -t $(TZ) -w 30
 n8n:         ; $(PY) main.py n8n $(N8N_DAYS) -l $(LIMIT)
 n8n-local:   ; $(PY) main.py n8n $(N8N_DAYS) -n
+probe:       ; $(PY) main.py probe
 
 fetch:
 	@for kw in "python developer" "react javascript frontend" \
