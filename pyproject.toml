@@ -7,7 +7,7 @@ name = "upwork-demand-analysis"
 version = "0.3.0"
 description = "Terminal-based market intelligence for Upwork — skills heatmap, BD shift optimizer, and n8n automation demand analysis"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Rajat" }]
 keywords = ["upwork", "freelance", "market-intelligence", "n8n", "automation"]
@@ -27,7 +27,7 @@ dev = [
 ]
 
 [project.scripts]
-upwork-intel = "upwork_intel.cli:main"
+upwork-intel = "main:main"
 
 [tool.setuptools]
 # We're keeping a flat layout (top-level modules) for now. When the
@@ -50,7 +50,7 @@ filterwarnings = ["error"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 extend-exclude = [".venv", "exports"]
 
 [tool.ruff.lint]
