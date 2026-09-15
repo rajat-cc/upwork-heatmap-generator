@@ -1,4 +1,5 @@
 """openpyxl primitives shared across feature exporters."""
+
 from __future__ import annotations
 
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -6,9 +7,9 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 # ── Palette ─────────────────────────────────────────────────────────────────
-HDR_FILL = PatternFill("solid", fgColor="1F3864")        # dark navy
+HDR_FILL = PatternFill("solid", fgColor="1F3864")  # dark navy
 HDR_FONT = Font(bold=True, color="FFFFFF", size=10)
-ALT_FILL = PatternFill("solid", fgColor="EEF2F7")        # light blue-grey
+ALT_FILL = PatternFill("solid", fgColor="EEF2F7")  # light blue-grey
 GREEN_FILL = PatternFill("solid", fgColor="D6EAD6")
 YELLOW_FILL = PatternFill("solid", fgColor="FFF2CC")
 RED_FILL = PatternFill("solid", fgColor="F4CCCC")
@@ -24,7 +25,7 @@ RIGHT = Alignment(horizontal="right", vertical="center")
 
 def write_header(ws: Worksheet, headers: list[str], widths: list[int]) -> None:
     """Write a styled header row + set column widths."""
-    for c, (h, w) in enumerate(zip(headers, widths), 1):
+    for c, (h, w) in enumerate(zip(headers, widths, strict=True), 1):
         cell = ws.cell(row=1, column=c, value=h)
         cell.fill = HDR_FILL
         cell.font = HDR_FONT
@@ -32,7 +33,9 @@ def write_header(ws: Worksheet, headers: list[str], widths: list[int]) -> None:
         ws.column_dimensions[get_column_letter(c)].width = w
 
 
-def style_title_row(ws: Worksheet, row: int, ncols: int, title: str, *, insert: bool = True) -> None:
+def style_title_row(
+    ws: Worksheet, row: int, ncols: int, title: str, *, insert: bool = True
+) -> None:
     """Insert a bold title row above the header at `row`."""
     if insert:
         ws.insert_rows(row)

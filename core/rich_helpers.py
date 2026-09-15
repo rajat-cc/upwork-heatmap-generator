@@ -1,4 +1,5 @@
 """Rich rendering primitives shared across feature renderers."""
+
 from __future__ import annotations
 
 from rich import box

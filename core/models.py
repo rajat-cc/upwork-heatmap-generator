@@ -4,8 +4,9 @@ A senior-architect note: these are intentionally `slots=True` dataclasses
 rather than Pydantic models — we don't need runtime validation here, we
 need cheap structs that the type checker and IDE can reason about. The
 DB layer still exchanges plain dicts at the SQL boundary; conversion
-happens in `Job.from_row()` and `Job.to_db_dict()`.
+happens in `Job.from_row()`.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,38 +52,45 @@ class Job:
 
     @classmethod
     def from_row(cls, row: Any) -> Job:
-        """Build a Job from a sqlite3.Row (or any mapping-like)."""
-        skills_raw = row["skills"] if "skills" in row.keys() else "[]"
+        """Build a Job from a sqlite3.Row (or any mapping-like).
+
+        The row is copied into a dict first: `sqlite3.Row` exposes `keys()`,
+        but `"x" in row` tests *values*, so membership checks and `.get()`
+        must go through a real dict. Columns added by later migrations may be
+        absent on older rows and fall back to their defaults.
+        """
+        data = dict(row)
         try:
-            skills = json.loads(skills_raw or "[]")
+            skills = json.loads(data.get("skills") or "[]")
         except (ValueError, TypeError):
             skills = []
+        job_id = data["id"]
         return cls(
-            id=row["id"],
-            title=row["title"] or "",
-            description=row["description"] or "",
-            url=row["url"] if "url" in row.keys() and row["url"] else f"https://www.upwork.com/jobs/{row['id']}",
-            published_at=row["published_at"] or "",
-            category=row["category"] or "",
-            contractor_tier=row["contractor_tier"] or "",
-            budget_type=row["budget_type"] or "",
-            budget_amount=float(row["budget_amount"] or 0),
-            budget_min=float(row["budget_min"] or 0),
-            budget_max=float(row["budget_max"] or 0),
+            id=job_id,
+            title=data.get("title") or "",
+            description=data.get("description") or "",
+            url=data.get("url") or f"https://www.upwork.com/jobs/{job_id}",
+            published_at=data.get("published_at") or "",
+            category=data.get("category") or "",
+            contractor_tier=data.get("contractor_tier") or "",
+            budget_type=data.get("budget_type") or "",
+            budget_amount=float(data.get("budget_amount") or 0),
+            budget_min=float(data.get("budget_min") or 0),
+            budget_max=float(data.get("budget_max") or 0),
             skills=skills,
-            total_applicants=int(row["total_applicants"] or 0),
-            client_total_hires=int(row["client_total_hires"] or 0),
-            client_total_spent=float(row["client_total_spent"] or 0),
-            client_verified=int(row["client_verified"] or 0),
-            client_feedback=float(row["client_feedback"] or 0),
-            client_country=row["client_country"] or "",
-            is_premium=int(row["is_premium"] or 0) if "is_premium" in row.keys() else 0,
-            is_enterprise=int(row["is_enterprise"] or 0) if "is_enterprise" in row.keys() else 0,
-            duration_label=row["duration_label"] or "" if "duration_label" in row.keys() else "",
-            first_seen_at=row["first_seen_at"] if "first_seen_at" in row.keys() and row["first_seen_at"] else "",
-            last_fetched_at=row["last_fetched_at"] if "last_fetched_at" in row.keys() and row["last_fetched_at"] else "",
-            fetch_count=int(row["fetch_count"] or 1) if "fetch_count" in row.keys() else 1,
-            discovered_via_search=row["discovered_via_search"] if "discovered_via_search" in row.keys() and row["discovered_via_search"] else "",
+            total_applicants=int(data.get("total_applicants") or 0),
+            client_total_hires=int(data.get("client_total_hires") or 0),
+            client_total_spent=float(data.get("client_total_spent") or 0),
+            client_verified=int(data.get("client_verified") or 0),
+            client_feedback=float(data.get("client_feedback") or 0),
+            client_country=data.get("client_country") or "",
+            is_premium=int(data.get("is_premium") or 0),
+            is_enterprise=int(data.get("is_enterprise") or 0),
+            duration_label=data.get("duration_label") or "",
+            first_seen_at=data.get("first_seen_at") or "",
+            last_fetched_at=data.get("last_fetched_at") or "",
+            fetch_count=int(data.get("fetch_count") or 1),
+            discovered_via_search=data.get("discovered_via_search") or "",
         )
 
     @property
@@ -115,4 +123,4 @@ class N8nReport:
     workflow_jobs: dict[str, list[Job]]
     unclassified_industry: int
     unclassified_workflow: int
-    jobs: list[Job]                       # sorted by opp_score DESC
+    jobs: list[Job]  # sorted by opp_score DESC

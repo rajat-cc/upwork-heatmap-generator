@@ -7,6 +7,7 @@ Kept as Python modules (not YAML/JSON) on purpose:
 
 If we ever ship taxonomies that non-engineers need to edit, move to YAML.
 """
+
 from taxonomies.compile import compile_taxonomy
 
 __all__ = ["compile_taxonomy"]

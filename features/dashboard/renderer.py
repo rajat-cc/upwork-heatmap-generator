@@ -2,7 +2,6 @@ from rich import box
 from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
-from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
@@ -12,6 +11,7 @@ DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 # ─── Skills Heatmap ──────────────────────────────────────────────────────────
+
 
 def render_skills_heatmap(stats: list, days: int, categories: list = None):
     if not stats:
@@ -31,16 +31,16 @@ def render_skills_heatmap(stats: list, days: int, categories: list = None):
         expand=True,
     )
 
-    table.add_column("#",        justify="right",  style="bright_black", min_width=3)
-    table.add_column("Skill",    style="bold white", min_width=16, ratio=1)
-    table.add_column("Jobs",     justify="right",  style="cyan",         min_width=5)
-    table.add_column("Demand",   min_width=10)
-    table.add_column("Trend",    justify="right",  min_width=7)
-    table.add_column("Opp",      justify="right",  min_width=4)
-    table.add_column("Compete",  justify="right",  min_width=9)
-    table.add_column("Hourly",   justify="right",  style="green",        min_width=8)
-    table.add_column("Fixed",    justify="right",  style="yellow",       min_width=8)
-    table.add_column("%H",       justify="right",  min_width=4)
+    table.add_column("#", justify="right", style="bright_black", min_width=3)
+    table.add_column("Skill", style="bold white", min_width=16, ratio=1)
+    table.add_column("Jobs", justify="right", style="cyan", min_width=5)
+    table.add_column("Demand", min_width=10)
+    table.add_column("Trend", justify="right", min_width=7)
+    table.add_column("Opp", justify="right", min_width=4)
+    table.add_column("Compete", justify="right", min_width=9)
+    table.add_column("Hourly", justify="right", style="green", min_width=8)
+    table.add_column("Fixed", justify="right", style="yellow", min_width=8)
+    table.add_column("%H", justify="right", min_width=4)
     table.add_column("Seniority", min_width=24)
 
     max_count = stats[0]["count"] if stats else 1
@@ -85,7 +85,7 @@ def render_skills_heatmap(stats: list, days: int, categories: list = None):
         hourly = row["avg_hourly"]
         fixed = row["avg_fixed"]
         hourly_str = f"${hourly:.0f}/hr" if hourly > 0 else "[bright_black]  —[/bright_black]"
-        fixed_str  = f"${fixed:,.0f}"   if fixed  > 0 else "[bright_black]  —[/bright_black]"
+        fixed_str = f"${fixed:,.0f}" if fixed > 0 else "[bright_black]  —[/bright_black]"
 
         # % Hourly column with colour
         hp = row["hourly_pct"]
@@ -131,6 +131,7 @@ def render_skills_heatmap(stats: list, days: int, categories: list = None):
 
 # ─── Client Intelligence ─────────────────────────────────────────────────────
 
+
 def render_client_intelligence(cs: dict, days: int):
     if not cs or cs.get("total_jobs", 0) == 0:
         return
@@ -150,16 +151,16 @@ def render_client_intelligence(cs: dict, days: int):
         border_style="bright_black",
         min_width=44,
     )
-    quality_table.add_column("Segment",    style="bold", min_width=14)
-    quality_table.add_column("Count",      justify="right", min_width=7)
-    quality_table.add_column("Share",      justify="right", min_width=7)
+    quality_table.add_column("Segment", style="bold", min_width=14)
+    quality_table.add_column("Count", justify="right", min_width=7)
+    quality_table.add_column("Share", justify="right", min_width=7)
     quality_table.add_column("Definition", style="bright_black", min_width=32)
 
     segments = [
-        ("champion", "bold green",      "Verified, $10k+ spent, 5+ hires"),
-        ("active",   "green",           "Verified, at least 1 hire"),
-        ("new",      "yellow",          "Verified, never hired"),
-        ("risky",    "red",             "Unverified or 0 hires"),
+        ("champion", "bold green", "Verified, $10k+ spent, 5+ hires"),
+        ("active", "green", "Verified, at least 1 hire"),
+        ("new", "yellow", "Verified, never hired"),
+        ("risky", "red", "Unverified or 0 hires"),
     ]
     for key, color, definition in segments:
         count = q.get(key, 0)
@@ -179,14 +180,16 @@ def render_client_intelligence(cs: dict, days: int):
         border_style="bright_black",
         min_width=52,
     )
-    country_table.add_column("Country",       style="bold white", min_width=20)
-    country_table.add_column("Jobs",          justify="right", style="cyan", min_width=6)
-    country_table.add_column("Verified",      justify="right", min_width=9)
-    country_table.add_column("Avg Hires",     justify="right", min_width=9)
-    country_table.add_column("Avg Budget",    justify="right", style="green", min_width=10)
+    country_table.add_column("Country", style="bold white", min_width=20)
+    country_table.add_column("Jobs", justify="right", style="cyan", min_width=6)
+    country_table.add_column("Verified", justify="right", min_width=9)
+    country_table.add_column("Avg Hires", justify="right", min_width=9)
+    country_table.add_column("Avg Budget", justify="right", style="green", min_width=10)
 
     for c in cs["countries"][:12]:
-        verified_color = "green" if c["verified_pct"] >= 70 else "yellow" if c["verified_pct"] >= 40 else "red"
+        verified_color = (
+            "green" if c["verified_pct"] >= 70 else "yellow" if c["verified_pct"] >= 40 else "red"
+        )
         budget_str = f"${c['avg_budget']:,.0f}" if c["avg_budget"] > 0 else "—"
         hires_str = f"{c['avg_hires']:.1f}" if c["avg_hires"] > 0 else "—"
         country_table.add_row(
@@ -210,6 +213,7 @@ def render_client_intelligence(cs: dict, days: int):
 
 
 # ─── Volume Heatmap ──────────────────────────────────────────────────────────
+
 
 def render_volume_heatmap(matrix: list, tz_name: str, days: int):
     if not any(v for row in matrix for v in row):
@@ -251,6 +255,7 @@ def render_volume_heatmap(matrix: list, tz_name: str, days: int):
 
 # ─── Shift Recommendation ────────────────────────────────────────────────────
 
+
 def render_shift_recommendation(rec: dict, tz_name: str):
     start = rec["shift_start"]
     end = rec["shift_end"]
@@ -275,22 +280,31 @@ def render_shift_recommendation(rec: dict, tz_name: str):
     )
 
     console.print(
-        Panel(body, title="[bold green]BD SHIFT RECOMMENDATION[/bold green]",
-              border_style="green", expand=False)
+        Panel(
+            body,
+            title="[bold green]BD SHIFT RECOMMENDATION[/bold green]",
+            border_style="green",
+            expand=False,
+        )
     )
     console.print()
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
+
 def _demand_bar(count: int, max_count: int, width: int = 10) -> str:
     ratio = count / max_count if max_count else 0
     filled = round(ratio * width)
     empty = width - filled
-    if ratio >= 0.8:   color = "red"
-    elif ratio >= 0.5: color = "orange3"
-    elif ratio >= 0.3: color = "yellow"
-    else:              color = "blue"
+    if ratio >= 0.8:
+        color = "red"
+    elif ratio >= 0.5:
+        color = "orange3"
+    elif ratio >= 0.3:
+        color = "yellow"
+    else:
+        color = "blue"
     return f"[{color}]{'█' * filled}[/{color}][bright_black]{'░' * empty}[/bright_black]"
 
 
@@ -308,18 +322,26 @@ def _tier_bar(entry: int, mid: int, expert: int) -> str:
 
 
 def _heat_char(ratio: float) -> str:
-    if ratio == 0:    return "·"
-    if ratio < 0.15:  return "░"
-    if ratio < 0.35:  return "▒"
-    if ratio < 0.60:  return "▓"
+    if ratio == 0:
+        return "·"
+    if ratio < 0.15:
+        return "░"
+    if ratio < 0.35:
+        return "▒"
+    if ratio < 0.60:
+        return "▓"
     return "█"
 
 
 def _heat_color(ratio: float) -> str:
-    if ratio < 0.15:  return "bright_black"
-    if ratio < 0.35:  return "blue"
-    if ratio < 0.60:  return "yellow"
-    if ratio < 0.80:  return "orange3"
+    if ratio < 0.15:
+        return "bright_black"
+    if ratio < 0.35:
+        return "blue"
+    if ratio < 0.60:
+        return "yellow"
+    if ratio < 0.80:
+        return "orange3"
     return "red"
 
 

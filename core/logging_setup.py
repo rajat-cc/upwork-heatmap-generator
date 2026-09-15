@@ -4,6 +4,7 @@ Console output for the user stays as `rich.print` calls inside renderers.
 Logs are for postmortem / debugging — they go to stderr at WARNING+ by
 default, or DEBUG if `UPWORK_INTEL_DEBUG=1` in the env.
 """
+
 import logging
 import os
 import sys
@@ -33,9 +34,7 @@ def _init() -> None:
         handler.setFormatter(logging.Formatter("%(message)s"))
     except ImportError:
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
 
     root = logging.getLogger()
     root.handlers.clear()

@@ -5,47 +5,61 @@ These catch the kind of bug that silently shifts every recommendation:
   - a substring-style false positive snuck in
   - a label with an empty keyword list (would match nothing)
 """
-import re
 
 import pytest
 
 from taxonomies.compile import compile_taxonomy, match_categories
 from taxonomies.n8n import (
-    INDUSTRIES, STACKS, WORKFLOWS, WORKFLOW_ABBR, abbr_workflow,
+    INDUSTRIES,
+    STACKS,
+    WORKFLOW_ABBR,
+    WORKFLOWS,
+    abbr_workflow,
 )
 
 
-@pytest.mark.parametrize("taxonomy,name", [
-    (INDUSTRIES, "INDUSTRIES"),
-    (WORKFLOWS,  "WORKFLOWS"),
-    (STACKS,     "STACKS"),
-])
+@pytest.mark.parametrize(
+    "taxonomy,name",
+    [
+        (INDUSTRIES, "INDUSTRIES"),
+        (WORKFLOWS, "WORKFLOWS"),
+        (STACKS, "STACKS"),
+    ],
+)
 def test_every_label_has_at_least_one_keyword(taxonomy, name):
     for label, kws in taxonomy:
         assert kws, f"{name}.{label!r} has no keywords"
-        assert all(isinstance(k, str) and k for k in kws), \
+        assert all(isinstance(k, str) and k for k in kws), (
             f"{name}.{label!r} has empty/non-str keyword"
+        )
 
 
-@pytest.mark.parametrize("taxonomy,name", [
-    (INDUSTRIES, "INDUSTRIES"),
-    (WORKFLOWS,  "WORKFLOWS"),
-    (STACKS,     "STACKS"),
-])
+@pytest.mark.parametrize(
+    "taxonomy,name",
+    [
+        (INDUSTRIES, "INDUSTRIES"),
+        (WORKFLOWS, "WORKFLOWS"),
+        (STACKS, "STACKS"),
+    ],
+)
 def test_every_taxonomy_compiles_without_error(taxonomy, name):
     compiled = compile_taxonomy(taxonomy)
     assert len(compiled) == len(taxonomy), f"{name}: lost a category in compile"
 
 
-@pytest.mark.parametrize("taxonomy,name", [
-    (INDUSTRIES, "INDUSTRIES"),
-    (WORKFLOWS,  "WORKFLOWS"),
-    (STACKS,     "STACKS"),
-])
+@pytest.mark.parametrize(
+    "taxonomy,name",
+    [
+        (INDUSTRIES, "INDUSTRIES"),
+        (WORKFLOWS, "WORKFLOWS"),
+        (STACKS, "STACKS"),
+    ],
+)
 def test_labels_are_unique_per_axis(taxonomy, name):
     labels = [label for label, _ in taxonomy]
-    assert len(labels) == len(set(labels)), \
-        f"{name} has duplicate labels: {[l for l in labels if labels.count(l) > 1]}"
+    assert len(labels) == len(set(labels)), (
+        f"{name} has duplicate labels: {[lab for lab in labels if labels.count(lab) > 1]}"
+    )
 
 
 def test_word_boundary_prevents_substring_false_positives():
@@ -70,13 +84,13 @@ def test_n8n_classification_realistic_job():
         "Will use OpenAI GPT-4 for lead scoring."
     )
     industries = match_categories(text, compile_taxonomy(INDUSTRIES))
-    workflows  = match_categories(text, compile_taxonomy(WORKFLOWS))
-    stacks     = match_categories(text, compile_taxonomy(STACKS))
+    workflows = match_categories(text, compile_taxonomy(WORKFLOWS))
+    stacks = match_categories(text, compile_taxonomy(STACKS))
 
-    assert "Real Estate" in industries        # property management, zillow
-    assert "CRM Sync" in workflows            # crm, hubspot
+    assert "Real Estate" in industries  # property management, zillow
+    assert "CRM Sync" in workflows  # crm, hubspot
     assert "Slack / Discord / Chat" in workflows
-    assert "AI / LLM Agents" in workflows     # openai, gpt-4
+    assert "AI / LLM Agents" in workflows  # openai, gpt-4
     assert "HubSpot" in stacks
     assert "Slack" in stacks
     assert "OpenAI / GPT" in stacks

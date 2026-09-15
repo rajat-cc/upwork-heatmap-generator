@@ -1,9 +1,10 @@
 """Read jobs from the DB and aggregate into an N8nReport."""
+
 from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from statistics import median
 
 from core.logging_setup import get_logger
@@ -23,9 +24,7 @@ def load_n8n_jobs(days: int = 7) -> list[Job]:
     1. FTS5 `MATCH 'n8n'` against title+description+skills — fast index scan
     2. Strict `\\bn8n\\b` regex re-validation — kills "n8nx"/URL false positives
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
-    )
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
     candidate_ids = search_jobs_fts("n8n", since_iso=cutoff)
     if not candidate_ids:
@@ -53,7 +52,7 @@ def analyze(jobs: list[Job]) -> N8nReport:
     """Tag every job and aggregate."""
     industry_count: Counter[str] = Counter()
     workflow_count: Counter[str] = Counter()
-    stack_count: Counter[str]    = Counter()
+    stack_count: Counter[str] = Counter()
     matrix: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     industry_jobs: dict[str, list[Job]] = defaultdict(list)

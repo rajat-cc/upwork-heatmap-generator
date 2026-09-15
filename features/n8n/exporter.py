@@ -1,4 +1,5 @@
 """6-sheet Excel export for the n8n report."""
+
 from __future__ import annotations
 
 import os
@@ -40,11 +41,11 @@ def _xl_summary(wb: Workbook, report: N8nReport, days: int) -> None:
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 50
     rows = [
-        ("Window",                f"Last {days} days"),
-        ("Total n8n jobs",        report.total_jobs),
-        ("Top workflow",          report.workflow_count[0][0] if report.workflow_count else "—"),
-        ("Top industry",          report.industry_count[0][0] if report.industry_count else "—"),
-        ("Top stack",             report.stack_count[0][0]    if report.stack_count    else "—"),
+        ("Window", f"Last {days} days"),
+        ("Total n8n jobs", report.total_jobs),
+        ("Top workflow", report.workflow_count[0][0] if report.workflow_count else "—"),
+        ("Top industry", report.industry_count[0][0] if report.industry_count else "—"),
+        ("Top stack", report.stack_count[0][0] if report.stack_count else "—"),
         ("Unclassified industry", report.unclassified_industry),
         ("Unclassified workflow", report.unclassified_workflow),
     ]
@@ -55,9 +56,17 @@ def _xl_summary(wb: Workbook, report: N8nReport, days: int) -> None:
 
 def _xl_workflow(wb: Workbook, report: N8nReport) -> None:
     ws = wb.create_sheet("By Workflow")
-    headers = ["#", "Workflow", "Jobs", "Share %",
-               "Med Hourly $", "Med Fixed $", "Avg Proposals", "Verified %"]
-    widths  = [4, 28, 7, 9, 13, 13, 13, 11]
+    headers = [
+        "#",
+        "Workflow",
+        "Jobs",
+        "Share %",
+        "Med Hourly $",
+        "Med Fixed $",
+        "Avg Proposals",
+        "Verified %",
+    ]
+    widths = [4, 28, 7, 9, 13, 13, 13, 11]
     write_header(ws, headers, widths)
 
     total = report.total_jobs
@@ -67,24 +76,36 @@ def _xl_workflow(wb: Workbook, report: N8nReport) -> None:
         ws.cell(row=r, column=1, value=i).alignment = CENTER
         ws.cell(row=r, column=2, value=name).font = BOLD
         ws.cell(row=r, column=3, value=count).alignment = RIGHT
-        ws.cell(row=r, column=4, value=round(count / total * 100, 1) if total else 0).alignment = RIGHT
-        ws.cell(row=r, column=5, value=round(s.med_hourly, 2) if s.med_hourly else None).alignment = RIGHT
-        ws.cell(row=r, column=6, value=round(s.med_fixed, 2)  if s.med_fixed  else None).alignment = RIGHT
-        ws.cell(row=r, column=7, value=round(s.avg_proposals, 1) if s.avg_proposals else None).alignment = RIGHT
+        ws.cell(
+            row=r, column=4, value=round(count / total * 100, 1) if total else 0
+        ).alignment = RIGHT
+        ws.cell(
+            row=r, column=5, value=round(s.med_hourly, 2) if s.med_hourly else None
+        ).alignment = RIGHT
+        ws.cell(
+            row=r, column=6, value=round(s.med_fixed, 2) if s.med_fixed else None
+        ).alignment = RIGHT
+        ws.cell(
+            row=r, column=7, value=round(s.avg_proposals, 1) if s.avg_proposals else None
+        ).alignment = RIGHT
         ws.cell(row=r, column=8, value=s.verified_pct).alignment = RIGHT
     last = len(report.workflow_count) + 1
     if last > 1:
         ws.conditional_formatting.add(
             f"C2:C{last}",
-            ColorScaleRule(start_type="min", start_color="FFFFFF",
-                           end_type="max", end_color="4472C4"),
+            ColorScaleRule(
+                start_type="min", start_color="FFFFFF", end_type="max", end_color="4472C4"
+            ),
         )
     ws.freeze_panes = "A2"
 
 
 def _xl_count_sheet(
-    wb: Workbook, name: str, label_col: str,
-    items: list[tuple[str, int]], total: int,
+    wb: Workbook,
+    name: str,
+    label_col: str,
+    items: list[tuple[str, int]],
+    total: int,
 ) -> None:
     ws = wb.create_sheet(name)
     write_header(ws, ["#", label_col, "Jobs", "Share %"], [4, 28, 8, 10])
@@ -93,7 +114,9 @@ def _xl_count_sheet(
         ws.cell(row=r, column=1, value=i).alignment = CENTER
         ws.cell(row=r, column=2, value=label).font = BOLD
         ws.cell(row=r, column=3, value=count).alignment = RIGHT
-        ws.cell(row=r, column=4, value=round(count / total * 100, 1) if total else 0).alignment = RIGHT
+        ws.cell(
+            row=r, column=4, value=round(count / total * 100, 1) if total else 0
+        ).alignment = RIGHT
     ws.freeze_panes = "A2"
 
 
@@ -108,11 +131,10 @@ def _xl_stack(wb: Workbook, report: N8nReport) -> None:
 def _xl_matrix(wb: Workbook, report: N8nReport) -> None:
     ws = wb.create_sheet("Industry x Workflow")
     industries = [i for i, _ in report.industry_count]
-    workflows  = [w for w, _ in report.workflow_count]
+    workflows = [w for w, _ in report.workflow_count]
     industries = [i for i in industries if any(report.matrix.get(i, {}).values())]
-    workflows  = [
-        w for w in workflows
-        if any(report.matrix.get(i, {}).get(w, 0) for i in industries)
+    workflows = [
+        w for w in workflows if any(report.matrix.get(i, {}).get(w, 0) for i in industries)
     ]
     if not industries or not workflows:
         return
@@ -135,17 +157,37 @@ def _xl_matrix(wb: Workbook, report: N8nReport) -> None:
     last_col = get_column_letter(len(workflows) + 1)
     ws.conditional_formatting.add(
         f"B2:{last_col}{len(industries) + 1}",
-        ColorScaleRule(start_type="num", start_value=0, start_color="FFFFFF",
-                       mid_type="percentile", mid_value=50, mid_color="FFD966",
-                       end_type="max", end_color="C00000"),
+        ColorScaleRule(
+            start_type="num",
+            start_value=0,
+            start_color="FFFFFF",
+            mid_type="percentile",
+            mid_value=50,
+            mid_color="FFD966",
+            end_type="max",
+            end_color="C00000",
+        ),
     )
 
 
 def _xl_jobs(wb: Workbook, report: N8nReport) -> None:
     ws = wb.create_sheet("Jobs")
-    headers = ["Score", "Posted", "Title", "Industries", "Workflows", "Stacks",
-               "Budget", "Proposals", "Country", "Verified", "Hires", "URL", "Job ID"]
-    widths  = [6, 12, 60, 22, 28, 28, 14, 10, 14, 9, 7, 36, 26]
+    headers = [
+        "Score",
+        "Posted",
+        "Title",
+        "Industries",
+        "Workflows",
+        "Stacks",
+        "Budget",
+        "Proposals",
+        "Country",
+        "Verified",
+        "Hires",
+        "URL",
+        "Job ID",
+    ]
+    widths = [6, 12, 60, 22, 28, 28, 14, 10, 14, 9, 7, 36, 26]
     write_header(ws, headers, widths)
 
     for i, j in enumerate(report.jobs, 1):
@@ -170,9 +212,15 @@ def _xl_jobs(wb: Workbook, report: N8nReport) -> None:
         ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(report.jobs) + 1}"
         ws.conditional_formatting.add(
             f"A2:A{len(report.jobs) + 1}",
-            ColorScaleRule(start_type="min", start_color="FFFFFF",
-                           mid_type="percentile", mid_value=50, mid_color="FFE699",
-                           end_type="max", end_color="70AD47"),
+            ColorScaleRule(
+                start_type="min",
+                start_color="FFFFFF",
+                mid_type="percentile",
+                mid_value=50,
+                mid_color="FFE699",
+                end_type="max",
+                end_color="70AD47",
+            ),
         )
 
 
