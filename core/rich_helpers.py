@@ -50,3 +50,52 @@ def bar(value: int, max_value: int, *, width: int = 20, ch: str = "█") -> str:
         return ""
     filled = max(1, round(value / max_value * width)) if value > 0 else 0
     return ch * filled
+
+
+def fmt_band(p25: float, p50: float, p75: float, suffix: str = "") -> str:
+    """`$25/hr (18–40)`: the median with its p25–p75 band; `—` when empty."""
+    if not p50:
+        return "—"
+    mid = fmt_money(p50, suffix)
+    if p25 and p75 and (p25 != p50 or p75 != p50):
+        return f"{mid} [bright_black]({p25:.0f}–{p75:.0f})[/bright_black]"
+    return mid
+
+
+def hours_ago(iso: str | None) -> float | None:
+    from db import _now_iso, hours_between  # local import: db imports config, not this module
+
+    return hours_between(iso, _now_iso()) if iso else None
+
+
+def data_as_of_line(last_fetch_iso: str | None, *, stale_after_hours: int | None = None) -> str:
+    """One line every screen starts with: when the data was last refreshed."""
+    from config import STALE_AFTER_HOURS
+
+    limit = STALE_AFTER_HOURS if stale_after_hours is None else stale_after_hours
+    if not last_fetch_iso:
+        return "[red]data as of: no successful fetch yet  ·  run `make sync` or `make auth`[/red]"
+    age = hours_ago(last_fetch_iso)
+    stamp = last_fetch_iso.replace("T", " ")[:16] + "Z"
+    if age is None:
+        return f"[yellow]data as of {stamp}[/yellow]"
+    colour = "red" if age > limit else "green"
+    label = f"{age:.1f} h ago" if age < 48 else f"{age / 24:.0f} days ago"
+    note = "  ·  STALE" if age > limit else ""
+    return f"[{colour}]data as of {stamp} ({label}){note}[/{colour}]"
+
+
+def provenance_footer(
+    *, days: int, n: int, runs: int, last_fetch_iso: str | None, extra: str = ""
+) -> str:
+    """Dim footer printed under every table: window, sample, runs, freshness."""
+    fetched = (last_fetch_iso or "never").replace("T", " ")[:16]
+    bits = [
+        f"window {days}d",
+        f"sample {n:,} jobs",
+        f"{runs} fetch run{'s' if runs != 1 else ''} in window",
+        f"last fetch {fetched}",
+    ]
+    if extra:
+        bits.append(extra)
+    return "  [bright_black]" + "  ·  ".join(bits) + "[/bright_black]"

@@ -5,6 +5,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from core.rich_helpers import fmt_band
+
 console = Console()
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -15,7 +17,7 @@ DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 def render_skills_heatmap(stats: list, days: int, categories: list = None):
     if not stats:
-        console.print("[yellow]No skill data found. Run:  make fetch[/yellow]")
+        console.print("[yellow]No skill data found. Run:  make sync[/yellow]")
         return
 
     cat_label = f"  [{', '.join(categories)}]" if categories else ""
@@ -37,19 +39,20 @@ def render_skills_heatmap(stats: list, days: int, categories: list = None):
     table.add_column("Demand", min_width=10)
     table.add_column("Trend", justify="right", min_width=7)
     table.add_column("Opp", justify="right", min_width=4)
-    table.add_column("Compete", justify="right", min_width=9)
-    table.add_column("Hourly", justify="right", style="green", min_width=8)
-    table.add_column("Fixed", justify="right", style="yellow", min_width=8)
+    table.add_column("Compete", justify="right", min_width=8)
+    table.add_column("Med $/hr", justify="right", style="green", min_width=14)
+    table.add_column("Med fixed", justify="right", style="yellow", min_width=14)
     table.add_column("%H", justify="right", min_width=4)
     table.add_column("Seniority", min_width=24)
 
     max_count = stats[0]["count"] if stats else 1
+    trend_reasons = {row.get("trend_reason") for row in stats}
 
     for i, row in enumerate(stats, 1):
         # Trend
         trend_pct = row["trend_pct"]
         if trend_pct is None:
-            trend_str = "[bright_black]  new[/bright_black]"
+            trend_str = "[bright_black]   n/a[/bright_black]"
         elif trend_pct >= 20:
             trend_str = f"[bold green]↑ {trend_pct}%[/bold green]"
         elif trend_pct > 0:
@@ -70,22 +73,19 @@ def render_skills_heatmap(stats: list, days: int, categories: list = None):
         else:
             opp_str = f"[bright_black]{opp}[/bright_black]"
 
-        # Competition (avg proposals per job) — no suffix to keep cell narrow
-        props = row["avg_proposals"]
+        # Competition (median proposals per job)
+        props = row["med_proposals"]
         if props == 0:
             comp_str = "[bright_black]—[/bright_black]"
         elif props <= 5:
-            comp_str = f"[bold green]{props:.1f}[/bold green]"
+            comp_str = f"[bold green]{props:.0f}[/bold green]"
         elif props <= 15:
-            comp_str = f"[yellow]{props:.1f}[/yellow]"
+            comp_str = f"[yellow]{props:.0f}[/yellow]"
         else:
-            comp_str = f"[red]{props:.1f}[/red]"
+            comp_str = f"[red]{props:.0f}[/red]"
 
-        # Budget columns
-        hourly = row["avg_hourly"]
-        fixed = row["avg_fixed"]
-        hourly_str = f"${hourly:.0f}/hr" if hourly > 0 else "[bright_black]  —[/bright_black]"
-        fixed_str = f"${fixed:,.0f}" if fixed > 0 else "[bright_black]  —[/bright_black]"
+        hourly_str = fmt_band(row["hourly_p25"], row["med_hourly"], row["hourly_p75"], "/hr")
+        fixed_str = fmt_band(row["fixed_p25"], row["med_fixed"], row["fixed_p75"])
 
         # % Hourly column with colour
         hp = row["hourly_pct"]
@@ -117,10 +117,15 @@ def render_skills_heatmap(stats: list, days: int, categories: list = None):
 
     console.print()
     console.print(table)
+    if "runs" in trend_reasons:
+        trend_note = "Trend n/a: fewer than 3 fetch runs in this window"
+    else:
+        trend_note = "Trend = 2nd half vs 1st half (promptly discovered jobs only, ≥5 per half)"
     console.print(
-        "  [bright_black]Trend = 2nd half vs 1st half  ·  "
+        f"  [bright_black]{trend_note}  ·  "
         "Opp = demand×budget÷competition (0–100)  ·  "
-        "Compete = avg proposals/job  ·  "
+        "Compete = median proposals/job  ·  "
+        "$ = median (p25–p75)  ·  "
         "Seniority:[/bright_black]  "
         "[bright_black]▪[/bright_black] Entry  "
         "[cyan]▪[/cyan] Mid  "
@@ -160,7 +165,7 @@ def render_client_intelligence(cs: dict, days: int):
         ("champion", "bold green", "Verified, $10k+ spent, 5+ hires"),
         ("active", "green", "Verified, at least 1 hire"),
         ("new", "yellow", "Verified, never hired"),
-        ("risky", "red", "Unverified or 0 hires"),
+        ("risky", "red", "Not payment-verified"),
     ]
     for key, color, definition in segments:
         count = q.get(key, 0)
@@ -178,11 +183,12 @@ def render_client_intelligence(cs: dict, days: int):
         box=box.SIMPLE_HEAVY,
         title_style="bold white",
         border_style="bright_black",
-        min_width=52,
+        min_width=60,
     )
     country_table.add_column("Country", style="bold white", min_width=20)
     country_table.add_column("Jobs", justify="right", style="cyan", min_width=6)
     country_table.add_column("Verified", justify="right", min_width=9)
+    country_table.add_column("Hire rate", justify="right", min_width=10)
     country_table.add_column("Avg Hires", justify="right", min_width=9)
     country_table.add_column("Avg Budget", justify="right", style="green", min_width=10)
 
@@ -193,9 +199,10 @@ def render_client_intelligence(cs: dict, days: int):
         budget_str = f"${c['avg_budget']:,.0f}" if c["avg_budget"] > 0 else "—"
         hires_str = f"{c['avg_hires']:.1f}" if c["avg_hires"] > 0 else "—"
         country_table.add_row(
-            c["country"],
+            c.get("country_name") or c["country"],
             f"{c['count']:,}",
             f"[{verified_color}]{c['verified_pct']}%[/{verified_color}]",
+            _hire_rate_str(c.get("med_hire_rate")),
             hires_str,
             budget_str,
         )
@@ -204,12 +211,26 @@ def render_client_intelligence(cs: dict, days: int):
 
     verified_pct = cs["verified_pct"]
     vcolor = "green" if verified_pct >= 60 else "yellow" if verified_pct >= 30 else "red"
+    hr_note = (
+        f"  [bright_black]·  median hire rate[/bright_black] {_hire_rate_str(cs['med_hire_rate'])}"
+        f" [bright_black](n={cs['hire_rate_n']:,})[/bright_black]"
+        if cs.get("med_hire_rate") is not None
+        else "  [bright_black]·  hire rate: no posted-jobs counts yet (run `make sync`)[/bright_black]"
+    )
     console.print(
         f"  [bright_black]Payment verified clients:[/bright_black] "
         f"[{vcolor}]{verified_pct}%[/{vcolor}]  "
-        f"[bright_black]of {cs['total_jobs']:,} jobs in last {days} days[/bright_black]"
+        f"[bright_black]of {cs['total_jobs']:,} jobs in last {days} days[/bright_black]{hr_note}"
     )
     console.print()
+
+
+def _hire_rate_str(rate: float | None) -> str:
+    if rate is None:
+        return "[bright_black]—[/bright_black]"
+    pct = rate * 100
+    color = "green" if pct >= 50 else "yellow" if pct >= 25 else "red"
+    return f"[{color}]{pct:.0f}%[/{color}]"
 
 
 # ─── Volume Heatmap ──────────────────────────────────────────────────────────
@@ -217,7 +238,7 @@ def render_client_intelligence(cs: dict, days: int):
 
 def render_volume_heatmap(matrix: list, tz_name: str, days: int):
     if not any(v for row in matrix for v in row):
-        console.print("[yellow]No volume data. Run:  make fetch[/yellow]")
+        console.print("[yellow]No volume data. Run:  make sync[/yellow]")
         return
 
     all_vals = [v for row in matrix for v in row if v > 0]
@@ -275,8 +296,7 @@ def render_shift_recommendation(rec: dict, tz_name: str):
         f"  [dim]Slowest Day[/dim]            [red]{rec['worst_day']}[/red]\n"
         f"\n  [dim]24h Pattern[/dim]   "
         f"[bright_black]00h [/bright_black][cyan]{sparkline}[/cyan][bright_black] 23h[/bright_black]\n"
-        f"\n  [dim]Best 8-hour window by posting volume. "
-        f"Respond within 2h of posting for highest win rate.[/dim]\n"
+        f"\n  [dim]Best 8-hour window by posting volume (weekdays).[/dim]\n"
     )
 
     console.print(

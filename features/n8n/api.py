@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.rule import Rule
 
 from core.logging_setup import get_logger
-from db import init_db
+from db import get_last_success, init_db
 from features.n8n import analyzer, classifier, exporter, renderer
 
 console = Console()
@@ -35,13 +35,14 @@ def run(days: int = 7, fetch: bool = True, limit: int = 1000) -> None:
             )
 
     console.print(Rule(f"[bold cyan]n8n Demand · Last {days} days[/bold cyan]"))
+    last_fetch = get_last_success()
     jobs = analyzer.load_n8n_jobs(days=days)
     report = analyzer.analyze(jobs)
-    classifier.persist(report.jobs)
-    renderer.render(report, days=days)
+    classifier.persist(j for j in report.jobs if not j.is_purged)
+    renderer.render(report, days=days, last_fetch=last_fetch)
 
     try:
-        path = exporter.export(report, days=days)
+        path = exporter.export(report, days=days, data_as_of=last_fetch or "never")
         console.print(f"\n  [dim]Excel export:[/dim]  [cyan]{path}[/cyan]\n")
     except Exception as exc:
         log.exception("Excel export failed")

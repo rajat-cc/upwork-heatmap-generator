@@ -1,10 +1,15 @@
 """Aggregations powering the general dashboard.
 
-Three independent analyses, each filtered by a `days`-window cutoff:
+Four independent analyses, each filtered by a `days`-window cutoff:
   - skills_stats:        top skills with trend, opp score, competition
-  - client_stats:        country breakdown + quality buckets
+  - client_stats:        country breakdown, quality buckets, hire rates
   - hourly_matrix:       7×24 jobs/hour grid in the requested timezone
   - shift_recommendation: best 8h BD window from the matrix
+
+Money figures are medians with p25–p75 bands (budgets are heavy-tailed).
+Trend % is guarded: it only appears when the window holds at least three
+completed fetch runs and both halves have enough promptly-discovered jobs;
+otherwise it would measure when sweeps ran, not what the market did.
 
 Returns dict-shaped results to preserve the existing renderer/exporter
 contracts. A future refactor can dataclass these too.
@@ -18,23 +23,31 @@ from datetime import UTC, datetime, timedelta
 
 import pytz
 
-from db import get_conn
+from core.stats import band, median
+from db import count_fetch_runs, get_conn, hours_between
+from taxonomies.countries import iso2_to_name
 from taxonomies.skills import normalize_skill
 
 DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Minimum jobs in the "old" half before we trust the trend number.
+# Minimum jobs in each half before we trust the trend number.
 _TREND_MIN_SAMPLE = 5
+# Minimum completed fetch runs inside the window before trend is shown at all.
+_TREND_MIN_RUNS = 3
+# A job counts toward the trend only if it was discovered within this many
+# hours of being published; late discoveries reflect sweep timing.
+_TREND_PROMPT_HOURS = 48
 
 
 def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
     now = datetime.now(UTC)
     full_cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
     half_cutoff = (now - timedelta(days=days // 2)).strftime("%Y-%m-%dT%H:%M:%S")
+    runs = count_fetch_runs(since_iso=full_cutoff)
 
     query = """
         SELECT skills, contractor_tier, budget_type, budget_amount,
-               budget_min, budget_max, total_applicants, published_at
+               budget_min, budget_max, total_applicants, published_at, first_seen_at
         FROM jobs WHERE published_at >= ?
     """
     params: list = [full_cutoff]
@@ -54,6 +67,8 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
         budget = float(row["budget_amount"] or 0)
         applicants = int(row["total_applicants"] or 0)
         is_recent = (row["published_at"] or "") >= half_cutoff
+        lag = hours_between(row["published_at"], row["first_seen_at"])
+        prompt = lag is not None and 0 <= lag <= _TREND_PROMPT_HOURS
 
         for skill in raw_skills:
             sk = normalize_skill(skill)
@@ -61,6 +76,7 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
                 continue
             if sk not in aggregated:
                 aggregated[sk] = {
+                    "count": 0,
                     "count_old": 0,
                     "count_new": 0,
                     "hourly_budgets": [],
@@ -71,10 +87,12 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
                     "fixed_count": 0,
                 }
             d = aggregated[sk]
-            if is_recent:
-                d["count_new"] += 1
-            else:
-                d["count_old"] += 1
+            d["count"] += 1
+            if prompt:
+                if is_recent:
+                    d["count_new"] += 1
+                else:
+                    d["count_old"] += 1
 
             if btype == "HOURLY" and budget > 0:
                 d["hourly_budgets"].append(budget)
@@ -90,21 +108,19 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
     results: list[dict] = []
     for sk, d in aggregated.items():
         old, new = d["count_old"], d["count_new"]
-        total = old + new
+        total = d["count"]
 
-        if old >= _TREND_MIN_SAMPLE:
-            trend_pct = round(((new - old) / old) * 100)
-        elif new > 0 and old == 0:
-            trend_pct = None
+        if runs < _TREND_MIN_RUNS:
+            trend_pct, trend_reason = None, "runs"
+        elif old >= _TREND_MIN_SAMPLE and new >= _TREND_MIN_SAMPLE:
+            trend_pct, trend_reason = round(((new - old) / old) * 100), "ok"
         else:
-            trend_pct = None
+            trend_pct, trend_reason = None, "sample"
 
         tier_total = sum(d["tiers"].values()) or 1
-        avg_hourly = (
-            sum(d["hourly_budgets"]) / len(d["hourly_budgets"]) if d["hourly_budgets"] else 0
-        )
-        avg_fixed = sum(d["fixed_budgets"]) / len(d["fixed_budgets"]) if d["fixed_budgets"] else 0
-        avg_proposals = sum(d["applicants"]) / len(d["applicants"]) if d["applicants"] else 0
+        h25, h50, h75 = band(d["hourly_budgets"])
+        f25, f50, f75 = band(d["fixed_budgets"])
+        med_proposals = median(d["applicants"])
 
         contract_total = d["hourly_count"] + d["fixed_count"]
         hourly_pct = round(d["hourly_count"] / contract_total * 100) if contract_total > 0 else 0
@@ -114,10 +130,15 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
                 "skill": sk,
                 "count": total,
                 "trend_pct": trend_pct,
-                "avg_hourly": avg_hourly,
-                "avg_fixed": avg_fixed,
+                "trend_reason": trend_reason,
+                "med_hourly": h50,
+                "hourly_p25": h25,
+                "hourly_p75": h75,
+                "med_fixed": f50,
+                "fixed_p25": f25,
+                "fixed_p75": f75,
                 "hourly_pct": hourly_pct,
-                "avg_proposals": avg_proposals,
+                "med_proposals": med_proposals,
                 "entry_pct": round(d["tiers"].get("ENTRY_LEVEL", 0) / tier_total * 100),
                 "mid_pct": round(d["tiers"].get("INTERMEDIATE", 0) / tier_total * 100),
                 "exp_pct": round(d["tiers"].get("EXPERT", 0) / tier_total * 100),
@@ -126,13 +147,13 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
 
     if results:
         max_count = max(r["count"] for r in results) or 1
-        max_budget = max(max(r["avg_hourly"], r["avg_fixed"]) for r in results) or 1
+        max_budget = max(max(r["med_hourly"], r["med_fixed"]) for r in results) or 1
 
         for r in results:
             demand_norm = r["count"] / max_count
-            best_budget = r["avg_hourly"] if r["avg_hourly"] > 0 else r["avg_fixed"]
+            best_budget = r["med_hourly"] if r["med_hourly"] > 0 else r["med_fixed"]
             budget_norm = best_budget / max_budget
-            competition_penalty = 1 / (1 + r["avg_proposals"] / 10)
+            competition_penalty = 1 / (1 + r["med_proposals"] / 10)
             r["opportunity_score"] = round(
                 (demand_norm * 0.45 + budget_norm * 0.30 + competition_penalty * 0.25) * 100
             )
@@ -148,7 +169,7 @@ def client_stats(days: int = 14) -> dict:
         rows = conn.execute(
             """
             SELECT client_country, client_verified, client_total_spent,
-                   client_total_hires, client_feedback, budget_amount, budget_type
+                   client_total_hires, client_feedback, budget_amount, budget_type, hire_rate
             FROM jobs WHERE published_at >= ?
             """,
             [cutoff],
@@ -161,11 +182,13 @@ def client_stats(days: int = 14) -> dict:
             "total_spent": 0.0,
             "budgets": [],
             "hires": [],
+            "hire_rates": [],
         }
     )
 
     quality_buckets = {"champion": 0, "active": 0, "new": 0, "risky": 0}
     verified_total = 0
+    hire_rates: list[float] = []
     total = len(rows)
 
     for row in rows:
@@ -180,17 +203,22 @@ def client_stats(days: int = 14) -> dict:
             country_data[country]["budgets"].append(float(row["budget_amount"]))
         if row["client_total_hires"] is not None:
             country_data[country]["hires"].append(int(row["client_total_hires"]))
+        if row["hire_rate"] is not None:
+            country_data[country]["hire_rates"].append(float(row["hire_rate"]))
+            hire_rates.append(float(row["hire_rate"]))
 
         hires = int(row["client_total_hires"] or 0)
         verified = bool(row["client_verified"])
-        if spent >= 10000 and hires >= 5 and verified:
+        # Order matters: "new" (verified, never hired) must be tested before
+        # the catch-all, or verified first-time clients are mislabelled risky.
+        if verified and spent >= 10000 and hires >= 5:
             quality_buckets["champion"] += 1
-        elif hires >= 1 and verified:
+        elif verified and hires >= 1:
             quality_buckets["active"] += 1
-        elif not verified or hires == 0:
-            quality_buckets["risky"] += 1
-        else:
+        elif verified and hires == 0:
             quality_buckets["new"] += 1
+        else:
+            quality_buckets["risky"] += 1
 
     countries: list[dict] = []
     for country, d in country_data.items():
@@ -200,10 +228,13 @@ def client_stats(days: int = 14) -> dict:
         countries.append(
             {
                 "country": country,
+                "country_name": iso2_to_name(country) if country != "Unknown" else "Unknown",
                 "count": d["count"],
                 "verified_pct": verified_pct,
                 "avg_budget": avg_budget,
                 "avg_hires": avg_hires,
+                "med_hire_rate": median(d["hire_rates"]) if d["hire_rates"] else None,
+                "hire_rate_n": len(d["hire_rates"]),
             }
         )
 
@@ -213,6 +244,8 @@ def client_stats(days: int = 14) -> dict:
         "countries": countries[:15],
         "quality": quality_buckets,
         "verified_pct": round(verified_total / total * 100) if total else 0,
+        "med_hire_rate": median(hire_rates) if hire_rates else None,
+        "hire_rate_n": len(hire_rates),
         "total_jobs": total,
     }
 
