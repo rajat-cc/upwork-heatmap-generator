@@ -28,6 +28,9 @@ env/
 exports/
 .sync.lock
 
+# Private funnel ledger (manual outcomes)
+data/
+
 # macOS
 .DS_Store
 .AppleDouble

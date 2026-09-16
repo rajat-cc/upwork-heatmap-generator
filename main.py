@@ -72,6 +72,72 @@ def cmd_probe(args: argparse.Namespace) -> None:
     run_probe(offline=args.offline, out=args.out)
 
 
+def cmd_ingest(args: argparse.Namespace) -> None:
+    from features.funnel.api import run_ingest
+
+    run_ingest(args.agent_dir)
+
+
+def cmd_outcome(args: argparse.Namespace) -> None:
+    from features.funnel.outcomes import outcomes_from_csv, record_outcome, record_outcomes
+
+    init_db()
+    if args.from_csv:
+        events = outcomes_from_csv(args.from_csv)
+        n = record_outcomes(events)
+        console.print(f"  [green]Recorded[/green] {n} new outcome(s) from {len(events)} rows.\n")
+        return
+    if not (args.job and args.event):
+        raise SystemExit(
+            "usage: main.py outcome <job id|url> <submitted|viewed|interview|hired|lost> [...]"
+        )
+    try:
+        event, n = record_outcome(
+            args.job,
+            args.event,
+            bid_amount=args.bid,
+            bid_type=args.bid_type,
+            connects=args.connects,
+            note=args.note or "",
+            ts=args.ts,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"  {exc}") from exc
+    state = "recorded" if n else "already recorded"
+    console.print(
+        f"  [green]{event['event']}[/green] {state} for job [cyan]{event['job_id']}[/cyan] at {event['ts']}"
+        + (
+            f"  ·  bid ${event['bid_amount']:g} {event['bid_type'] or ''}"
+            if event["bid_amount"]
+            else ""
+        )
+        + (f"  ·  {event['connects_spent']} connects" if event["connects_spent"] else "")
+        + "\n"
+    )
+
+
+def cmd_outcomes(args: argparse.Namespace) -> None:
+    from db import recent_events
+
+    init_db()
+    rows = recent_events(args.days)
+    if not rows:
+        console.print(f"  No manual outcomes in the last {args.days} days.\n")
+        return
+    for r in rows:
+        bid = f"  ${r['bid_amount']:g} {r['bid_type'] or ''}" if r["bid_amount"] else ""
+        console.print(
+            f"  {r['ts'][:16]}  [bold]{r['event']:<9}[/bold] {r['job_id']}{bid}  [dim]{r['source']}[/dim]"
+        )
+    console.print()
+
+
+def cmd_funnel(args: argparse.Namespace) -> None:
+    from features.funnel import run as run_funnel
+
+    run_funnel(days=args.days, export=not args.no_export)
+
+
 def cmd_sync(args: argparse.Namespace) -> None:
     from features.sync import run as run_sync
 
@@ -159,6 +225,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "  python main.py probe                 # which API queries/fields this key can use\n"
             "  python main.py sync                  # fetch watches + classify + purge (launchd runs this)\n"
             "  python main.py install-service       # run sync every 2 hours via launchd\n"
+            "  python main.py ingest                # read the proposal agent's logs into the ledger\n"
+            "  python main.py outcome <job> hired --bid 45 --bid-type hourly --connects 16\n"
+            "  python main.py funnel 30             # win rate, cost per hire, by segment\n"
             "  python main.py skills 7\n"
             "  python main.py shift 14 -t America/New_York\n"
             "  python main.py n8n 7                 # fetch + analyze last 7d of n8n jobs\n"
@@ -219,6 +288,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-purge", action="store_true", help="Skip the retention purge")
     p.add_argument("--since-days", type=int, metavar="N", help="Lookback per watch (default 2)")
     p.add_argument("-l", "--limit", type=int, metavar="N", help="Max jobs per watch (default 300)")
+
+    p = sub.add_parser(
+        "ingest", help="Read the proposal agent's alerts/drafts into the outcome ledger"
+    )
+    p.add_argument("--agent-dir", metavar="DIR", help="Override UPWORK_AGENT_DIR")
+
+    p = sub.add_parser(
+        "outcome", help="Record a proposal outcome (submitted/viewed/interview/hired/lost)"
+    )
+    p.add_argument("job", nargs="?", help="Job id, job URL or ~ciphertext")
+    p.add_argument("event", nargs="?", help="submitted | viewed | interview | hired | lost")
+    p.add_argument("--bid", type=float, metavar="USD", help="Bid amount")
+    p.add_argument("--bid-type", choices=["hourly", "fixed"], help="Bid type")
+    p.add_argument("--connects", type=int, metavar="N", help="Connects spent on this proposal")
+    p.add_argument("--note", metavar="TEXT", help="Free-text note")
+    p.add_argument("--ts", metavar="ISO", help="Event time (default: now)")
+    p.add_argument(
+        "--from-csv",
+        metavar="PATH",
+        help="Bulk file: job,event[,ts,bid_amount,bid_type,connects,note]",
+    )
+
+    p = sub.add_parser("outcomes", help="List recently recorded outcomes")
+    p.add_argument("--days", type=int, default=30, help="Lookback (default 30)")
+
+    p = sub.add_parser("funnel", help="Proposal funnel: stages, win rate, cost per hire, segments")
+    p.add_argument("days", type=int, nargs="?", default=30, help="Window in days (default: 30)")
+    p.add_argument("--no-export", action="store_true", help="Skip the Excel export")
 
     p = sub.add_parser("purge", help="Blank fetched text older than the retention limit")
     p.add_argument("--dry-run", action="store_true", help="Count only; change nothing")
@@ -286,6 +383,10 @@ def main() -> None:
         "n8n": cmd_n8n,
         "probe": cmd_probe,
         "sync": cmd_sync,
+        "ingest": cmd_ingest,
+        "outcome": cmd_outcome,
+        "outcomes": cmd_outcomes,
+        "funnel": cmd_funnel,
         "purge": cmd_purge,
         "install-service": cmd_install_service,
         "uninstall-service": cmd_uninstall_service,

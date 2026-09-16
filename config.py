@@ -56,6 +56,14 @@ PURGE_FIELDS = tuple(
 STALE_AFTER_HOURS = int(os.getenv("UPWORK_STALE_AFTER_HOURS", "24"))
 SNAPSHOT_MIN_GAP_HOURS = float(os.getenv("UPWORK_SNAPSHOT_MIN_GAP_HOURS", "2"))
 
+# ── Funnel economics ────────────────────────────────────────────────────────
+# What a connect costs you and how many a proposal spends when the outcome
+# record does not say. Both are printed in the funnel header.
+CONNECT_PRICE_USD = float(os.getenv("UPWORK_CONNECT_PRICE_USD", "0.15"))
+DEFAULT_CONNECTS_PER_PROPOSAL = int(os.getenv("UPWORK_DEFAULT_CONNECTS", "12"))
+# Manual outcomes are also appended here as a portable ledger (one file per month).
+OUTCOMES_DIR = os.getenv("UPWORK_OUTCOMES_DIR", os.path.join(ROOT_DIR, "data", "outcomes"))
+
 # ── Backwards-compatibility shims ───────────────────────────────────────────
 # Older modules may still import these from config; re-export until removed.
 from taxonomies.skills import TECH_SKILLS  # noqa: E402,F401

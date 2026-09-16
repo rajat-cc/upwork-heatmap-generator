@@ -34,7 +34,20 @@ Two analysis lenses over the same job database:
 
 Each workflow gets money + competition signals (median $/hr, median fixed, avg proposals, % verified clients). Jobs are ranked by an opportunity score = **budget × verified × low-competition**.
 
-Excel exports for both lenses go to `exports/`.
+### 3. Proposal funnel (closing the loop)
+
+| Stage data | Where it comes from |
+|---|---|
+| **Notified / Filtered** | The proposal agent's `alerts.csv`, read in place (both column layouts) |
+| **Drafted / Accepted** | The agent's `agent.db` (`drafted_ts`, `decided_ts`), read-only |
+| **Submitted / Viewed / Interview / Hired / Lost** | You: `python main.py outcome <job> hired --bid 45 --connects 16` |
+
+The funnel reports distinct jobs per stage, conversion between stages, a
+Beta-shrunk win rate (flagged below five submissions), connects spent, cost per
+hire, median submitted and winning bids, and all of it by category, client
+segment, budget band, experience, hour notified, platform and workflow.
+
+Excel exports for all lenses go to `exports/`.
 
 ---
 
@@ -87,6 +100,13 @@ make sync                        # fetch watches → classify → snapshots → 
 make sync-offline                # same path on a recorded page (no token needed)
 make purge                       # dry-run of the 24h text purge (python main.py purge to apply)
 make install-service             # launchd job: sync every 2 hours (uninstall-service removes it)
+
+# Proposal funnel
+make ingest                      # read the agent's alerts.csv + agent.db into the outcome ledger
+python main.py outcome <job id|url> submitted --bid 45 --bid-type hourly --connects 16
+python main.py outcome <job id|url> hired    # also: viewed · interview · lost
+make funnel                      # stages, shrunk win rate, cost per hire, by segment (FUNNEL_DAYS=30)
+make outcomes                    # what you recorded recently
 
 # Data management
 make fetch                       # one-off keyword sweep (8 themes)
@@ -171,6 +191,7 @@ upwork_demand_analysis/
 │   ├── stats.py             #   median and p25–p75 band helpers
 │   ├── watches.py           #   watches.txt parser (pasted Upwork search URLs)
 │   ├── service.py           #   launchd LaunchAgent for the periodic sync
+│   ├── lens.py              #   Lens protocol (analyze → render → export) + run_lens
 │   └── xlsx_helpers.py      #   openpyxl header/style helpers
 │
 ├── taxonomies/              # domain knowledge (what counts as what)
@@ -186,8 +207,14 @@ upwork_demand_analysis/
 │   │   ├── renderer.py
 │   │   ├── exporter.py
 │   │   └── api.py           #   public: run() / run_skills_only / run_shift_only
-│   ├── sync/                #   scheduled refresh (fetch → classify → snapshot → purge → status)
+│   ├── sync/                #   scheduled refresh (fetch → classify → snapshot → purge → ingest → status)
 │   │   └── api.py
+│   ├── funnel/              #   proposal funnel: ledger ingest, manual outcomes, funnel lens
+│   │   ├── ingest.py        #   alerts.csv (two layouts) + agent.db + outcomes JSONL, idempotent
+│   │   ├── outcomes.py      #   `outcome` command: DB row + monthly JSONL ledger
+│   │   ├── analyzer.py      #   stages, Beta-shrunk win rate, connects economics, segments
+│   │   ├── renderer.py / exporter.py
+│   │   └── api.py           #   FunnelLens (implements core.lens.Lens)
 │   └── n8n/                 #   n8n automation demand
 │       ├── classifier.py    #   regex tagging (4 axes) + opp_score + cache persist
 │       ├── analyzer.py      #   cache-first load (FTS ∪ cached labels) + aggregate
@@ -195,7 +222,7 @@ upwork_demand_analysis/
 │       ├── exporter.py      #   6-sheet Excel
 │       └── api.py           #   public: run(days, fetch, limit)
 │
-├── tests/                   # 95 tests: client, probe, sync, migrations, purge, snapshots, watches, stats, …
+├── tests/                   # 111 tests: client, probe, sync, migrations, purge, snapshots, ingest, funnel, …
 │   └── fixtures/graphql/    #   recorded responses for offline runs (probe --offline, CI smoke)
 ├── .github/workflows/ci.yml # pytest + lint on every PR
 ├── pyproject.toml           # project metadata + pytest + ruff config
@@ -207,7 +234,7 @@ upwork_demand_analysis/
 
 ## Database schema
 
-Single SQLite file (`upwork_jobs.db`), 7 tables, FTS5 search, versioned migrations (schema v6).
+Single SQLite file (`upwork_jobs.db`), 8 tables, FTS5 search, versioned migrations (schema v7).
 
 | Table | Purpose |
 |---|---|
@@ -215,6 +242,7 @@ Single SQLite file (`upwork_jobs.db`), 7 tables, FTS5 search, versioned migratio
 | `job_skills` | Normalised skill list — `(job_id, skill)` for fast skill queries |
 | `job_classifications` | Cached classifier output — `(job_id, axis, label, source, confidence)`, axis ∈ {industry, workflow, stack, platform}, `source ∈ {regex, llm, manual}`. Written on ingest, so analysis survives the text purge |
 | `job_snapshots` | One row per observation of a job — `(job_id, observed_at, stage, total_applicants, hired_count, invites_sent, proposals_tier)`. `search` stages come free with every sync; detail stages are gated on `docs/api_probe.json` |
+| `proposal_events` | The outcome ledger — `(event_id, job_id, event, ts, source, bid_amount, bid_type, connects_spent, meta_json)`. Deterministic ids make every ingest idempotent; manual outcomes are also appended to `data/outcomes/*.jsonl` |
 | `fetch_runs` | Every API fetch logged: search_term, started/finished, jobs_seen, jobs_new, status |
 | `schema_meta` | Versioned migration ledger — each migration runs once, recorded with timestamp |
 | `jobs_fts` (virtual) | FTS5 index over title + description + skills, kept in sync via triggers |
@@ -287,6 +315,17 @@ older than `UPWORK_STALE_AFTER_HOURS`) and ends with a footer: window, sample
 size, fetch runs in the window, last fetch. The Excel exports carry the same
 "data as of" in their title row / Summary sheet.
 
+### Win rate and cost per hire
+```
+win_rate_raw    = hired / submitted
+win_rate_shrunk = (hired + 1) / (submitted + 10)        # Beta(1, 9) prior: a 10% base rate
+insufficient    = submitted < 5                          # shown as "n<5"
+connects_spent  = Σ connects per SUBMITTED (UPWORK_DEFAULT_CONNECTS when not recorded)
+cost_per_hire   = connects_spent × UPWORK_CONNECT_PRICE_USD / hired
+```
+Stage counts are distinct jobs (the agent logs duplicate alerts). Segments come
+from the alert's own fields, so jobs the heatmap never fetched still slice.
+
 ### BD Shift Window
 Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The window with the highest sum wins.
 
@@ -322,20 +361,23 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 | `UPWORK_PURGE_FIELDS` | `title,description` | Which text fields the purge blanks |
 | `UPWORK_STALE_AFTER_HOURS` | `24` | When the "data as of" line turns red |
 | `UPWORK_EXPORTS_DIR` | `exports` | Where workbooks and `status.json` go |
+| `UPWORK_CONNECT_PRICE_USD` | `0.15` | What one connect costs you |
+| `UPWORK_DEFAULT_CONNECTS` | `12` | Connects assumed per submission when not recorded |
+| `UPWORK_OUTCOMES_DIR` | `data/outcomes` | Portable JSONL ledger of manual outcomes |
 
 ---
 
 ## Testing
 
 ```bash
-make test         # 95 tests in ~0.8s
+make test         # 111 tests in ~2s
 make test-cov     # with coverage report
 make lint         # ruff check + format
 ```
 
 Tests cover the regex taxonomies, the classifier behaviour against fixture jobs, the opportunity score formula across boundary inputs, migration idempotency on a fresh DB, and the GraphQL response parser.
 
-CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline` end-to-end without any API access.
+CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline → ingest → outcome → funnel` end-to-end without any API access.
 
 ---
 

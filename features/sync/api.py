@@ -64,6 +64,8 @@ class SyncResult:
     classification_rows: int = 0
     detail_snapshots: str = "gated: run `make probe` first"
     purged: int = 0
+    ingested_events: int = 0
+    ingest_error: str | None = None
     jobs_total: int = 0
     last_success_at: str | None = None
     error: str | None = None
@@ -158,6 +160,16 @@ def run(
 
         if purge:
             result.purged = purge_text(config.PURGE_TEXT_HOURS, config.PURGE_FIELDS)
+
+        if not offline:
+            # Best effort: the agent's logs may be absent on this machine.
+            try:
+                from features.funnel.ingest import ingest as ingest_events
+
+                result.ingested_events = ingest_events().inserted
+            except Exception as exc:  # never let the ledger break the refresh
+                log.warning("Event ingest skipped: %s", exc)
+                result.ingest_error = str(exc)
     finally:
         _release_lock(lock)
 
@@ -229,7 +241,8 @@ def _render(result: SyncResult) -> None:
     console.print(table)
     console.print(
         f"  classified {result.classified_jobs} jobs ({result.classification_rows} labels)  ·  "
-        f"purged text on {result.purged} rows  ·  {result.jobs_total:,} jobs in DB\n"
+        f"purged text on {result.purged} rows  ·  {result.ingested_events} new funnel events  ·  "
+        f"{result.jobs_total:,} jobs in DB\n"
         f"  {data_as_of_line(result.last_success_at)}\n"
         f"  [dim]detail snapshots: {result.detail_snapshots}  ·  status: {status_path()}[/dim]\n"
     )

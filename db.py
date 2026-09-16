@@ -29,10 +29,38 @@ from datetime import UTC, datetime, timedelta
 from config import DB_PATH, PURGE_FIELDS, SNAPSHOT_MIN_GAP_HOURS
 from taxonomies.countries import to_iso2
 
-SCHEMA_VERSION = 6  # Bump when adding a migration to MIGRATIONS below.
+SCHEMA_VERSION = 7  # Bump when adding a migration to MIGRATIONS below.
 
 CLASSIFICATION_AXES = ("industry", "workflow", "stack", "platform")
 PURGEABLE_FIELDS = ("title", "description")
+
+# Proposal funnel vocabulary, in pipeline order (FILTERED and LOST are side exits).
+EVENT_TYPES = (
+    "NOTIFIED",
+    "FILTERED",
+    "DRAFTED",
+    "ACCEPTED",
+    "SUBMITTED",
+    "VIEWED",
+    "INTERVIEW",
+    "HIRED",
+    "LOST",
+)
+EVENT_SOURCES = ("agent_csv", "agent_db", "manual", "jsonl", "api")
+
+_EVENTS_DDL = f"""
+CREATE TABLE IF NOT EXISTS proposal_events (
+    event_id       TEXT PRIMARY KEY,
+    job_id         TEXT NOT NULL,
+    event          TEXT NOT NULL CHECK (event IN ({",".join(f"'{e}'" for e in EVENT_TYPES)})),
+    ts             TEXT NOT NULL,
+    source         TEXT NOT NULL CHECK (source IN ({",".join(f"'{e}'" for e in EVENT_SOURCES)})),
+    bid_amount     REAL,
+    bid_type       TEXT,
+    connects_spent INTEGER,
+    meta_json      TEXT NOT NULL DEFAULT '{{}}',
+    ingested_at    TEXT NOT NULL
+)"""
 
 
 @contextmanager
@@ -134,6 +162,10 @@ CREATE TABLE IF NOT EXISTS job_snapshots (
     PRIMARY KEY (job_id, observed_at)
 );
 CREATE INDEX IF NOT EXISTS idx_snap_job       ON job_snapshots(job_id, observed_at);
+
+{_EVENTS_DDL};
+CREATE INDEX IF NOT EXISTS idx_events_job     ON proposal_events(job_id, ts);
+CREATE INDEX IF NOT EXISTS idx_events_event   ON proposal_events(event, ts);
 
 CREATE TABLE IF NOT EXISTS fetch_runs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -398,6 +430,13 @@ def _migration_6_classification_axes(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_class_source ON job_classifications(source)")
 
 
+def _migration_7_proposal_events(conn):
+    """The outcome ledger. Created by the base schema on fresh DBs; here for older ones."""
+    conn.execute(_EVENTS_DDL)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_job ON proposal_events(job_id, ts)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_event ON proposal_events(event, ts)")
+
+
 MIGRATIONS = [
     (
         1,
@@ -413,6 +452,7 @@ MIGRATIONS = [
     ),
     (5, _migration_5_snapshot_baseline, "job_snapshots table with a baseline observation per job"),
     (6, _migration_6_classification_axes, "job_classifications accepts the 'platform' axis"),
+    (7, _migration_7_proposal_events, "proposal_events outcome ledger"),
 ]
 
 
@@ -855,3 +895,96 @@ def search_jobs_fts(query: str, since_iso: str | None = None) -> list[str]:
         params.append(since_iso)
     with get_conn() as conn:
         return [r[0] for r in conn.execute(sql, params).fetchall()]
+
+
+# ─── Proposal events (outcome ledger) ───────────────────────────────────────
+
+
+def insert_events(events: list[dict]) -> int:
+    """INSERT OR IGNORE a batch of event dicts; returns how many were new.
+
+    Each event: {event_id, job_id, event, ts, source, bid_amount?, bid_type?,
+    connects_spent?, meta?}. Idempotent by event_id, so re-ingesting is safe.
+    """
+    if not events:
+        return 0
+    now = _now_iso()
+    payload = [
+        (
+            e["event_id"],
+            e["job_id"],
+            e["event"],
+            e["ts"],
+            e["source"],
+            e.get("bid_amount"),
+            e.get("bid_type"),
+            e.get("connects_spent"),
+            json.dumps(e.get("meta") or {}, sort_keys=True),
+            now,
+        )
+        for e in events
+    ]
+    with get_conn() as conn:
+        before = conn.total_changes
+        conn.executemany(
+            """INSERT OR IGNORE INTO proposal_events
+               (event_id, job_id, event, ts, source, bid_amount, bid_type, connects_spent,
+                meta_json, ingested_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            payload,
+        )
+        return conn.total_changes - before
+
+
+def events_since(since_iso: str, until_iso: str | None = None) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM proposal_events WHERE ts >= ?"
+    params: list = [since_iso]
+    if until_iso:
+        sql += " AND ts < ?"
+        params.append(until_iso)
+    sql += " ORDER BY ts"
+    with get_conn() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def events_for_job(job_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM proposal_events WHERE job_id = ? ORDER BY ts", (job_id,)
+        ).fetchall()
+
+
+def recent_events(
+    days: int, sources: tuple[str, ...] = ("manual", "jsonl", "api")
+) -> list[sqlite3.Row]:
+    since = _cutoff_iso(days * 24)
+    placeholders = ",".join("?" * len(sources))
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT * FROM proposal_events WHERE ts >= ? AND source IN ({placeholders}) ORDER BY ts DESC",
+            [since, *sources],
+        ).fetchall()
+
+
+def find_job_id_by_url(url_fragment: str) -> str | None:
+    """Map a pasted job URL (ciphertext form) to the numeric id the ledger uses."""
+    frag = url_fragment.strip().rstrip("/")
+    key = frag.rsplit("/", 1)[-1]
+    if not key:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT job_id FROM proposal_events WHERE meta_json LIKE ? ORDER BY ts LIMIT 1",
+            (f"%{key}%",),
+        ).fetchone()
+    return row[0] if row else None
+
+
+def events_summary() -> dict:
+    with get_conn() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM proposal_events").fetchone()[0]
+        by_source = dict(
+            conn.execute("SELECT source, COUNT(*) FROM proposal_events GROUP BY source").fetchall()
+        )
+        last = conn.execute("SELECT MAX(ingested_at) FROM proposal_events").fetchone()[0]
+    return {"total": total, "by_source": by_source, "last_ingested_at": last}
