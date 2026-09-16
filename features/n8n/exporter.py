@@ -9,17 +9,18 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.utils import get_column_letter
 
-from config import EXPORTS_DIR
+import config
 from core.models import Job, N8nReport
+from core.rich_helpers import budget_label
 from core.scoring import get_scoring
 from core.xlsx_helpers import BOLD, CENTER, HDR_FILL, HDR_FONT, LEFT, NORMAL, RIGHT, write_header
 
 
 def export(report: N8nReport, days: int, *, data_as_of: str = "") -> str:
     """Build workbook; return path. Also writes `n8n_demand_latest.xlsx`."""
-    os.makedirs(EXPORTS_DIR, exist_ok=True)
+    os.makedirs(config.EXPORTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H%M")
-    path = os.path.join(EXPORTS_DIR, f"n8n_demand_{ts}.xlsx")
+    path = os.path.join(config.EXPORTS_DIR, f"n8n_demand_{ts}.xlsx")
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -32,7 +33,7 @@ def export(report: N8nReport, days: int, *, data_as_of: str = "") -> str:
     _xl_jobs(wb, report)
 
     wb.save(path)
-    wb.save(os.path.join(EXPORTS_DIR, "n8n_demand_latest.xlsx"))
+    wb.save(os.path.join(config.EXPORTS_DIR, "n8n_demand_latest.xlsx"))
     return path
 
 
@@ -235,12 +236,4 @@ def _xl_jobs(wb: Workbook, report: N8nReport) -> None:
 
 
 def _budget_label(j: Job) -> str:
-    if j.budget_type == "HOURLY":
-        if j.budget_min and j.budget_max:
-            return f"${j.budget_min:.0f}-{j.budget_max:.0f}/hr"
-        if j.budget_amount:
-            return f"${j.budget_amount:.0f}/hr"
-        return "Hourly"
-    if j.budget_type == "FIXED" and j.budget_amount:
-        return f"${j.budget_amount:,.0f} fixed"
-    return "—"
+    return budget_label(j)

@@ -236,7 +236,7 @@ def _hire_rate_str(rate: float | None) -> str:
 # ─── Volume Heatmap ──────────────────────────────────────────────────────────
 
 
-def render_volume_heatmap(matrix: list, tz_name: str, days: int):
+def render_volume_heatmap(matrix: list, tz_name: str, days: int, title: str | None = None):
     if not any(v for row in matrix for v in row):
         console.print("[yellow]No volume data. Run:  make sync[/yellow]")
         return
@@ -245,9 +245,8 @@ def render_volume_heatmap(matrix: list, tz_name: str, days: int):
     max_val = max(all_vals) if all_vals else 1
 
     console.print()
-    console.rule(
-        f"[bold cyan]JOB POSTING VOLUME  ·  Avg jobs/hr  ·  {tz_name}  ·  Last {days} days[/bold cyan]"
-    )
+    heading = title or "JOB POSTING VOLUME  ·  Avg jobs/hr"
+    console.rule(f"[bold cyan]{heading}  ·  {tz_name}  ·  Last {days} days[/bold cyan]")
     console.print()
 
     hr_labels = "00  04  08  12  16  20  "
@@ -277,7 +276,7 @@ def render_volume_heatmap(matrix: list, tz_name: str, days: int):
 # ─── Shift Recommendation ────────────────────────────────────────────────────
 
 
-def render_shift_recommendation(rec: dict, tz_name: str):
+def render_shift_recommendation(rec: dict, tz_name: str, basis: str = "all postings"):
     start = rec["shift_start"]
     end = rec["shift_end"]
     peak = rec["peak_hour"]
@@ -296,7 +295,7 @@ def render_shift_recommendation(rec: dict, tz_name: str):
         f"  [dim]Slowest Day[/dim]            [red]{rec['worst_day']}[/red]\n"
         f"\n  [dim]24h Pattern[/dim]   "
         f"[bright_black]00h [/bright_black][cyan]{sparkline}[/cyan][bright_black] 23h[/bright_black]\n"
-        f"\n  [dim]Best 8-hour window by posting volume (weekdays).[/dim]\n"
+        f"\n  [dim]Best 8-hour window by volume of {basis} (weekdays).[/dim]\n"
     )
 
     console.print(

@@ -52,6 +52,22 @@ def bar(value: int, max_value: int, *, width: int = 20, ch: str = "█") -> str:
     return ch * filled
 
 
+def budget_label(job, *, short: bool = False) -> str:
+    """`$80-150/hr` / `$5,000 fixed`; short form `$5.0k fxd` for tight columns."""
+    if job.budget_type == "HOURLY":
+        if job.budget_min and job.budget_max:
+            return f"${job.budget_min:.0f}-{job.budget_max:.0f}/hr"
+        if job.budget_amount:
+            return f"${job.budget_amount:.0f}/hr"
+        return "hourly" if short else "Hourly"
+    if job.budget_type == "FIXED" and job.budget_amount:
+        amt = job.budget_amount
+        if short:
+            return f"${amt / 1000:.1f}k fxd" if amt >= 1000 else f"${amt:.0f} fxd"
+        return f"${amt:,.0f} fixed"
+    return "—"
+
+
 def fmt_band(p25: float, p50: float, p75: float, suffix: str = "") -> str:
     """`$25/hr (18–40)`: the median with its p25–p75 band; `—` when empty."""
     if not p50:

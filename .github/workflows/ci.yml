@@ -80,3 +80,8 @@ jobs:
           python main.py bands 30
           python main.py intel 30 --out /tmp/exports/market_intel_latest.json
           python main.py explain 9000000000000000001
+          python main.py automation 7 -n
+          python main.py clients 90
+          python main.py shift 7
+          python main.py digest
+          python main.py install-service --digest --dry-run

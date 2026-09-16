@@ -9,7 +9,7 @@ BACKUPS_DIR ?= backups
 
 .PHONY: help setup setup-dev auth seed dashboard skills shift watch fetch \
         n8n n8n-local probe sync sync-offline purge install-service uninstall-service \
-        ingest funnel outcomes bands intel \
+        ingest funnel outcomes bands intel automation clients digest \
         test test-cov lint backup clean
 
 help:
@@ -40,6 +40,9 @@ help:
 	@echo "  make bands                 — bid bands (p25/median/p75) by workflow × segment × experience, and your bids"
 	@echo "  make intel                 — write exports/market_intel_latest.json for the proposal agent"
 	@echo "  python main.py explain <job_id>   — how one job's score was computed (scoring.toml)"
+	@echo "  make automation            — demand by platform (n8n, Make, Zapier, GHL, Apps Script, …), local DB"
+	@echo "  make clients               — likely repeat clients (heuristic) and your history with them"
+	@echo "  make digest                — weekly digest to exports/ (and Telegram if configured)"
 	@echo ""
 	@echo "  make test                  — run pytest"
 	@echo "  make test-cov              — pytest with coverage report"
@@ -80,6 +83,9 @@ funnel:      ; $(PY) main.py funnel $(FUNNEL_DAYS)
 outcomes:    ; $(PY) main.py outcomes
 bands:       ; $(PY) main.py bands $(FUNNEL_DAYS)
 intel:       ; $(PY) main.py intel $(FUNNEL_DAYS)
+automation:  ; $(PY) main.py automation $(N8N_DAYS) -n
+clients:     ; $(PY) main.py clients $(FUNNEL_DAYS)
+digest:      ; $(PY) main.py digest --send
 
 fetch:
 	@for kw in "python developer" "react javascript frontend" \

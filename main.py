@@ -138,6 +138,35 @@ def cmd_funnel(args: argparse.Namespace) -> None:
     run_funnel(days=args.days, export=not args.no_export)
 
 
+def cmd_automation(args: argparse.Namespace) -> None:
+    from features.automation import run as run_automation
+
+    run_automation(
+        days=args.days,
+        platforms=args.platform,
+        fetch=not args.no_fetch,
+        limit=args.limit,
+        export=not args.no_export,
+    )
+
+
+def cmd_clients(args: argparse.Namespace) -> None:
+    from features.clients import run as run_clients
+
+    run_clients(days=args.days, export=not args.no_export)
+
+
+def cmd_digest(args: argparse.Namespace) -> None:
+    from features.digest import run as run_digest
+
+    path, sent = run_digest(send=args.send, path=args.out)
+    console.print(
+        f"  [green]Wrote[/green] {path}" + ("  ·  sent to Telegram" if sent else "") + "\n"
+    )
+    if args.send and not sent:
+        console.print("  [yellow]Not sent: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.[/yellow]\n")
+
+
 def cmd_bands(args: argparse.Namespace) -> None:
     from features.bands import run as run_bands
 
@@ -227,25 +256,28 @@ def cmd_purge(args: argparse.Namespace) -> None:
 
 
 def cmd_install_service(args: argparse.Namespace) -> None:
-    from core.service import LABEL, install
+    from core.service import install, label_for
 
-    path, data = install(interval=args.interval, dry_run=args.dry_run)
+    kind = "digest" if args.digest else "sync"
+    path, data = install(interval=args.interval, dry_run=args.dry_run, kind=kind)
     if args.dry_run:
         console.print(data.decode())
         console.print(f"  [dim]dry run — would write[/dim] {path}\n")
         return
+    cadence = "every Monday 08:00" if kind == "digest" else f"every {args.interval // 60} min"
     console.print(
-        f"  [green]Installed[/green] {LABEL}: sync every {args.interval // 60} min\n"
+        f"  [green]Installed[/green] {label_for(kind)}: {kind} {cadence}\n"
         f"  plist: {path}\n  logs:  ~/Library/Logs/upwork-intel/\n"
         f"  [dim]check:[/dim] launchctl list | grep upwork-intel\n"
     )
 
 
 def cmd_uninstall_service(args: argparse.Namespace) -> None:
-    from core.service import LABEL, uninstall
+    from core.service import label_for, uninstall
 
-    removed = uninstall()
-    console.print(f"  {'Removed' if removed else 'Not installed:'} {LABEL}\n")
+    kind = "digest" if args.digest else "sync"
+    removed = uninstall(kind)
+    console.print(f"  {'Removed' if removed else 'Not installed:'} {label_for(kind)}\n")
 
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
@@ -291,6 +323,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "  python main.py funnel 30             # win rate, cost per hire, by segment\n"
             "  python main.py bands 30              # what the market pays, and where your bids sit\n"
             "  python main.py explain <job_id>      # the score decomposition for one job\n"
+            "  python main.py automation 7 -n       # demand by platform (n8n, Make, Zapier, GHL, …)\n"
+            "  python main.py clients 90            # likely repeat clients and your history with them\n"
+            "  python main.py digest --send         # weekly digest to exports/ and Telegram\n"
             "  python main.py skills 7\n"
             "  python main.py shift 14 -t America/New_York\n"
             "  python main.py n8n 7                 # fetch + analyze last 7d of n8n jobs\n"
@@ -395,11 +430,47 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="Count only; change nothing")
     p.add_argument("--hours", type=int, metavar="H", help="Override UPWORK_PURGE_TEXT_HOURS")
 
-    p = sub.add_parser("install-service", help="Install the launchd job that runs sync")
+    p = sub.add_parser(
+        "install-service", help="Install the launchd job that runs sync (or the digest)"
+    )
     p.add_argument("--interval", type=int, default=7200, metavar="SECONDS", help="Default 7200")
+    p.add_argument("--digest", action="store_true", help="Install the weekly digest job instead")
     p.add_argument("--dry-run", action="store_true", help="Print the plist without installing")
 
-    sub.add_parser("uninstall-service", help="Remove the launchd sync job")
+    p = sub.add_parser("uninstall-service", help="Remove the launchd sync (or digest) job")
+    p.add_argument("--digest", action="store_true", help="Remove the weekly digest job instead")
+
+    p = sub.add_parser(
+        "automation", help="Automation demand across platforms (n8n, Make, Zapier, GHL, …)"
+    )
+    p.add_argument(
+        "days", type=int, nargs="?", default=7, help="Lookback window in days (default: 7)"
+    )
+    p.add_argument(
+        "--platform",
+        nargs="+",
+        metavar="NAME",
+        help="Only these platforms (labels from taxonomies/automation.py)",
+    )
+    p.add_argument(
+        "-n", "--no-fetch", action="store_true", help="Skip the API fetch; analyze the local DB"
+    )
+    p.add_argument(
+        "-l", "--limit", type=int, default=300, help="Max jobs per platform to pull (default: 300)"
+    )
+    p.add_argument("--no-export", action="store_true", help="Skip the Excel export")
+
+    p = sub.add_parser(
+        "clients", help="Likely repeat clients (heuristic fingerprint) and your history with them"
+    )
+    p.add_argument("days", type=int, nargs="?", default=90, help="Window in days (default: 90)")
+    p.add_argument("--no-export", action="store_true", help="Skip the Excel export")
+
+    p = sub.add_parser(
+        "digest", help="Weekly digest: what moved this week, as Markdown (and Telegram)"
+    )
+    p.add_argument("--send", action="store_true", help="Also send to Telegram when configured")
+    p.add_argument("--out", metavar="PATH", help="Override the output path")
 
     p = sub.add_parser("skills", help="Show skills demand heatmap")
     p.add_argument(
@@ -462,6 +533,9 @@ def main() -> None:
         "outcomes": cmd_outcomes,
         "funnel": cmd_funnel,
         "bands": cmd_bands,
+        "automation": cmd_automation,
+        "clients": cmd_clients,
+        "digest": cmd_digest,
         "intel": cmd_intel,
         "explain": cmd_explain,
         "purge": cmd_purge,

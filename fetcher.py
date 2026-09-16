@@ -31,6 +31,7 @@ from rich.console import Console
 
 import auth
 from config import FETCH_BACKOFF_BASE, FETCH_BACKOFF_MAX, FETCH_MAX_RETRIES, GRAPHQL_URL
+from core.capabilities import has_search_field
 from core.logging_setup import get_logger
 from core.ratelimit import TokenBucket
 from db import finish_fetch_run, start_fetch_run, upsert_jobs
@@ -258,7 +259,7 @@ def get_org_id(*, transport: Transport | None = None, token: str | None = None) 
 
 # ─── Job search ─────────────────────────────────────────────────────────────
 
-SEARCH_QUERY = """
+SEARCH_QUERY_TEMPLATE = """
 query SearchJobs($filter: MarketplaceJobPostingsSearchFilter) {
   marketplaceJobPostingsSearch(
     marketPlaceJobFilter: $filter
@@ -278,7 +279,7 @@ query SearchJobs($filter: MarketplaceJobPostingsSearchFilter) {
         publishedDateTime
         experienceLevel
         category
-        durationLabel
+        __EXTRA_FIELDS__durationLabel
         premium
         enterprise
         totalApplicants
@@ -299,6 +300,17 @@ query SearchJobs($filter: MarketplaceJobPostingsSearchFilter) {
   }
 }
 """
+
+
+# Fields the schema may or may not expose on this key; asked for only when the
+# live probe listed them (a missing field fails the whole query).
+OPTIONAL_NODE_FIELDS = ("subcategory",)
+SEARCH_QUERY = SEARCH_QUERY_TEMPLATE.replace("__EXTRA_FIELDS__", "")
+
+
+def search_query() -> str:
+    extra = "".join(f"{f}\n        " for f in OPTIONAL_NODE_FIELDS if has_search_field(f))
+    return SEARCH_QUERY_TEMPLATE.replace("__EXTRA_FIELDS__", extra)
 
 
 def build_filter(
@@ -377,7 +389,7 @@ def fetch_jobs(
                 after=str(offset),
             )
             data = gql(
-                SEARCH_QUERY,
+                search_query(),
                 {"filter": job_filter},
                 transport=transport,
                 org_id=org_id,
@@ -464,6 +476,7 @@ def _parse_job(node: dict) -> dict:
         "title": node.get("title") or "",
         "published_at": (node.get("publishedDateTime") or "").replace("+0000", "").replace("Z", ""),
         "category": node.get("category") or "Uncategorized",
+        "subcategory": node.get("subcategory") or "",
         # Upwork sometimes nulls this non-null field; store the truth, not a guess.
         "contractor_tier": node.get("experienceLevel") or "UNKNOWN",
         "budget_type": budget_type,

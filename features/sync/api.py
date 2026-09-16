@@ -68,6 +68,7 @@ class SyncResult:
     ingest_error: str | None = None
     vendor_proposals: str = ""
     intel_path: str | None = None
+    llm_tagging: str = ""
     jobs_total: int = 0
     last_success_at: str | None = None
     error: str | None = None
@@ -159,6 +160,20 @@ def run(
         jobs = classifier.classify_rows(touched)
         result.classified_jobs = len(jobs)
         result.classification_rows = classifier.persist(jobs)
+
+        if not offline:
+            try:
+                from features.automation import llm_tagger
+
+                tagged = llm_tagger.tag()
+                result.llm_tagging = tagged.skipped or (
+                    f"{tagged.tagged_jobs} of {tagged.considered} untagged jobs labelled "
+                    f"({tagged.labels} labels)"
+                    + (f", {len(tagged.errors)} batch errors" if tagged.errors else "")
+                )
+            except Exception as exc:  # optional enrichment must never stop the run
+                log.warning("LLM tagging skipped: %s", exc)
+                result.llm_tagging = f"failed: {exc}"
 
         if purge:
             result.purged = purge_text(config.PURGE_TEXT_HOURS, config.PURGE_FIELDS)
@@ -266,7 +281,8 @@ def _render(result: SyncResult) -> None:
         f"  {data_as_of_line(result.last_success_at)}\n"
         f"  [dim]detail snapshots: {result.detail_snapshots}  ·  vendor proposals: "
         f"{result.vendor_proposals or 'offline'}[/dim]\n"
-        f"  [dim]intel: {result.intel_path or '—'}  ·  status: {status_path()}[/dim]\n"
+        f"  [dim]intel: {result.intel_path or '—'}  ·  llm tagging: {result.llm_tagging or 'offline'}[/dim]\n"
+        f"  [dim]status: {status_path()}[/dim]\n"
     )
     if result.error == "reauth":
         console.print("[red]Authorization failed. Run:  make auth[/red]\n")

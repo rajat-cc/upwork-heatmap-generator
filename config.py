@@ -64,6 +64,19 @@ DEFAULT_CONNECTS_PER_PROPOSAL = int(os.getenv("UPWORK_DEFAULT_CONNECTS", "12"))
 # Manual outcomes are also appended here as a portable ledger (one file per month).
 OUTCOMES_DIR = os.getenv("UPWORK_OUTCOMES_DIR", os.path.join(ROOT_DIR, "data", "outcomes"))
 
+# ── LLM tagging (Phase 4) — `claude -p` on this machine, Claude Max ─────────
+LLM_TAGGING = os.getenv("UPWORK_LLM_TAGGING", "1") not in ("0", "false", "no", "")
+LLM_TAG_CAP = int(os.getenv("UPWORK_LLM_TAG_CAP", "50"))
+LLM_MODEL = os.getenv("UPWORK_LLM_MODEL", "")
+LLM_TIMEOUT_SECONDS = int(os.getenv("UPWORK_LLM_TIMEOUT", "180"))
+
+# ── Winnable-volume heatmap ─────────────────────────────────────────────────
+WINNABLE_MAX_APPLICANTS = int(os.getenv("UPWORK_WINNABLE_MAX_APPLICANTS", "10"))
+
+# ── Weekly digest delivery (optional; plain Telegram Bot API call) ──────────
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
 # ── Backwards-compatibility shims ───────────────────────────────────────────
 # Older modules may still import these from config; re-export until removed.
 from taxonomies.skills import TECH_SKILLS  # noqa: E402,F401

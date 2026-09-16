@@ -21,7 +21,7 @@ Two analysis lenses over the same job database:
 |---|---|
 | **Skills Demand Heatmap** | Top 50 skills with trend, opportunity score, competition density, hourly/fixed budget breakdown |
 | **Client Intelligence** | Quality segmentation (Champion / Active / New / Risky) and top countries with verified %, avg hires, avg budget |
-| **Volume Heatmap** | 7-day × 24-hour posting grid showing when clients post, in your timezone |
+| **Volume Heatmap** | 7-day × 24-hour posting grid showing when clients post, in your timezone, plus the winnable-postings grid |
 | **BD Shift Recommendation** | Best 8-hour window for your BD team, derived from peak posting volume |
 
 ### 2. n8n Automation Demand
@@ -54,6 +54,16 @@ segment, budget band, experience, hour notified, platform and workflow.
 | **Bid bands** (`make bands`) | What the market pays: p25 / median / p75 by workflow × client segment × experience × budget type, rolling up to the workflow or budget-type band when a cell has fewer than 8 jobs, with your own submitted bids placed against the band and coloured by outcome |
 | **Personal score** (`python main.py explain <job_id>`) | One 0–100 number per job built from six named components, every constant in `scoring.toml`, every component printed |
 | **Market intel** (`make intel`) | `exports/market_intel_latest.json`: bands, demand by axis, watch suggestions, funnel summary. Aggregates only, no job ids or text, validated against `docs/market_intel.schema.json` before it is written |
+
+### 5. Widen
+
+| Lens / job | What it adds |
+|---|---|
+| **Automation** (`make automation`, `python main.py automation 7 --platform n8n Make`) | The n8n analysis across every platform label (n8n, Make, Zapier, GoHighLevel, Apps Script, Power Automate, Pipedream, Airtable Automations, custom code), with a platform table and a platform × workflow matrix. `n8n` stays as a shortcut |
+| **LLM tagging** (inside `sync`) | Jobs the regexes leave without an industry are batched to `claude -p` on this machine (Claude Max, no API cost), labels validated against the taxonomy and stored with `source='llm'`. Off with `UPWORK_LLM_TAGGING=0`; capped per run |
+| **Winnable heatmap** (`make shift`) | A second 7 × 24 grid of postings that had at most 10 applicants when first seen, in client segments you convert in; the shift window is derived from it once snapshots exist |
+| **Clients** (`make clients`) | Likely repeat posters from a heuristic fingerprint (country, spend, hires, posted count), with their workflows, platforms and your history with them |
+| **Weekly digest** (`make digest`, `install-service --digest`) | This week vs last week: volume, platforms, workflows, hourly median, your funnel, sync health. Markdown to `exports/`, optionally to Telegram every Monday |
 
 Excel exports for all lenses go to `exports/`.
 
@@ -120,6 +130,14 @@ make outcomes                    # what you recorded recently
 make bands                       # bid bands (p25/median/p75) by workflow × segment × experience, and your bids vs band
 make intel                       # exports/market_intel_latest.json — aggregates only, for the proposal agent
 python main.py explain <job_id>  # the score decomposition for one job (constants in scoring.toml)
+
+# Widen
+make automation                  # demand by platform (n8n, Make, Zapier, GHL, Apps Script, …), local DB
+python main.py automation 7 --platform n8n Make   # fetch + analyze selected platforms
+make clients                     # likely repeat clients (heuristic) and your history with them
+make shift                       # posting volume + the winnable-postings grid and shift window
+make digest                      # weekly digest to exports/ (and Telegram when configured)
+python main.py install-service --digest           # …every Monday 08:00 via launchd
 
 # Data management
 make fetch                       # one-off keyword sweep (8 themes)
@@ -206,6 +224,7 @@ upwork_demand_analysis/
 │   ├── service.py           #   launchd LaunchAgent for the periodic sync
 │   ├── lens.py              #   Lens protocol (analyze → render → export) + run_lens
 │   ├── scoring.py           #   personal score from scoring.toml; `explain` decomposition
+│   ├── capabilities.py      #   what the live probe says this key can query (gates optional fields)
 │   └── xlsx_helpers.py      #   openpyxl header/style helpers
 │
 ├── taxonomies/              # domain knowledge (what counts as what)
@@ -232,6 +251,9 @@ upwork_demand_analysis/
 │   │   └── api.py           #   FunnelLens (implements core.lens.Lens)
 │   ├── bands/               #   bid bands lens (p25/median/p75 + your bids vs band)
 │   ├── intel/               #   market_intel_latest.json producer + schema validator
+│   ├── automation/          #   automation lens across platforms + `claude -p` industry tagger
+│   ├── clients/             #   repeat-client accounts (heuristic fingerprint)
+│   ├── digest/              #   weekly digest (Markdown + Telegram)
 │   └── n8n/                 #   n8n automation demand
 │       ├── classifier.py    #   regex tagging (4 axes) + opp_score + cache persist
 │       ├── analyzer.py      #   cache-first load (FTS ∪ cached labels) + aggregate
@@ -239,7 +261,7 @@ upwork_demand_analysis/
 │       ├── exporter.py      #   6-sheet Excel
 │       └── api.py           #   public: run(days, fetch, limit)
 │
-├── tests/                   # 124 tests: client, probe, sync, migrations, purge, ingest, funnel, scoring, bands, …
+├── tests/                   # 133 tests: client, probe, sync, migrations, purge, ingest, funnel, scoring, bands, phase 4, …
 │   └── fixtures/graphql/    #   recorded responses for offline runs (probe --offline, CI smoke)
 ├── .github/workflows/ci.yml # pytest + lint on every PR
 ├── scoring.toml             # every scoring constant, versioned
@@ -400,20 +422,25 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 | `UPWORK_OUTCOMES_DIR` | `data/outcomes` | Portable JSONL ledger of manual outcomes |
 | `UPWORK_SCORING_FILE` | `scoring.toml` | Alternative scoring constants file |
 | `UPWORK_PORTFOLIO_TAGS` | — | One term per line; drives the score's `fit` component |
+| `UPWORK_LLM_TAGGING` | `1` | Tag untagged industries via `claude -p` during sync (`0` disables) |
+| `UPWORK_LLM_TAG_CAP` | `50` | Max jobs sent to the model per sync |
+| `UPWORK_LLM_MODEL` | — | Optional `--model` for the CLI |
+| `UPWORK_WINNABLE_MAX_APPLICANTS` | `10` | Applicant ceiling for the winnable grid |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Where the weekly digest is sent |
 
 ---
 
 ## Testing
 
 ```bash
-make test         # 124 tests in ~2s
+make test         # 133 tests in ~3s
 make test-cov     # with coverage report
 make lint         # ruff check + format
 ```
 
 Tests cover the regex taxonomies, the classifier behaviour against fixture jobs, the opportunity score formula across boundary inputs, migration idempotency on a fresh DB, and the GraphQL response parser.
 
-CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline → ingest → outcome → funnel → bands → intel → explain` end-to-end without any API access.
+CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline → ingest → outcome → funnel → bands → intel → explain → automation → clients → shift → digest` end-to-end without any API access.
 
 ---
 

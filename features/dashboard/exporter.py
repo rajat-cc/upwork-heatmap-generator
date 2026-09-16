@@ -6,7 +6,7 @@ from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from config import EXPORTS_DIR
+import config
 
 DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -40,9 +40,9 @@ def export_dashboard(
     data_as_of: str = "",
 ) -> str:
     """Build a timestamped Excel workbook and return its path."""
-    os.makedirs(EXPORTS_DIR, exist_ok=True)
+    os.makedirs(config.EXPORTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H%M")
-    path = os.path.join(EXPORTS_DIR, f"upwork_dashboard_{ts}.xlsx")
+    path = os.path.join(config.EXPORTS_DIR, f"upwork_dashboard_{ts}.xlsx")
 
     wb = Workbook()
     wb.remove(wb.active)  # remove default blank sheet
@@ -55,7 +55,7 @@ def export_dashboard(
 
     wb.save(path)
     # Keep a fixed "latest" copy for easy access
-    latest = os.path.join(EXPORTS_DIR, "latest.xlsx")
+    latest = os.path.join(config.EXPORTS_DIR, "latest.xlsx")
     wb.save(latest)
     return path
 
@@ -122,6 +122,17 @@ def _sheet_skills(wb: Workbook, data: list, days: int, data_as_of: str = ""):
 
     # Conditional formatting — Opp Score (col E = 5): green-yellow-red scale
     last = len(data) + 1
+    if data:
+        _skills_formatting(ws, last)
+
+    ws.sheet_properties.tabColor = "1F3864"
+    suffix = f"  ·  data as of {data_as_of}" if data_as_of else ""
+    ws.insert_rows(1)
+    _style_title_row(ws, 1, len(headers), f"Skills Demand — Last {days} days{suffix}", insert=False)
+
+
+def _skills_formatting(ws, last: int) -> None:
+    """Colour scales need a non-empty range; an empty sheet must still export."""
     ws.conditional_formatting.add(
         f"E2:E{last}",
         ColorScaleRule(
@@ -141,11 +152,6 @@ def _sheet_skills(wb: Workbook, data: list, days: int, data_as_of: str = ""):
         f"C2:C{last}",
         DataBarRule(start_type="min", end_type="max", color="4472C4", showValue=True),
     )
-
-    ws.sheet_properties.tabColor = "1F3864"
-    suffix = f"  ·  data as of {data_as_of}" if data_as_of else ""
-    ws.insert_rows(1)
-    _style_title_row(ws, 1, len(headers), f"Skills Demand — Last {days} days{suffix}", insert=False)
 
 
 def _sheet_client_quality(wb: Workbook, cs: dict, days: int):
@@ -228,6 +234,12 @@ def _sheet_client_countries(wb: Workbook, cs: dict):
 
     # Color-scale Verified % (col D)
     last = len(cs.get("countries", [])) + 1
+    if last > 1:
+        _countries_formatting(ws, last)
+    _style_title_row(ws, 1, len(headers), "Top Client Countries")
+
+
+def _countries_formatting(ws, last: int) -> None:
     ws.conditional_formatting.add(
         f"D2:D{last}",
         ColorScaleRule(
@@ -242,7 +254,6 @@ def _sheet_client_countries(wb: Workbook, cs: dict):
             end_color="D6EAD6",
         ),
     )
-    _style_title_row(ws, 1, len(headers), "Top Client Countries")
 
 
 def _sheet_volume_heatmap(wb: Workbook, matrix: list, tz_name: str, days: int):
