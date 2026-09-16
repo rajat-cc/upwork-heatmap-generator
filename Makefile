@@ -9,7 +9,7 @@ BACKUPS_DIR ?= backups
 
 .PHONY: help setup setup-dev auth seed dashboard skills shift watch fetch \
         n8n n8n-local probe sync sync-offline purge install-service uninstall-service \
-        ingest funnel outcomes \
+        ingest funnel outcomes bands intel \
         test test-cov lint backup clean
 
 help:
@@ -37,6 +37,9 @@ help:
 	@echo "  make ingest                — read the proposal agent's alerts/drafts into the outcome ledger"
 	@echo "  make funnel                — proposal funnel: win rate, cost per hire, by segment (30d)"
 	@echo "  make outcomes              — list outcomes you recorded (python main.py outcome <job> hired …)"
+	@echo "  make bands                 — bid bands (p25/median/p75) by workflow × segment × experience, and your bids"
+	@echo "  make intel                 — write exports/market_intel_latest.json for the proposal agent"
+	@echo "  python main.py explain <job_id>   — how one job's score was computed (scoring.toml)"
 	@echo ""
 	@echo "  make test                  — run pytest"
 	@echo "  make test-cov              — pytest with coverage report"
@@ -75,6 +78,8 @@ uninstall-service: ; $(PY) main.py uninstall-service
 ingest:      ; $(PY) main.py ingest
 funnel:      ; $(PY) main.py funnel $(FUNNEL_DAYS)
 outcomes:    ; $(PY) main.py outcomes
+bands:       ; $(PY) main.py bands $(FUNNEL_DAYS)
+intel:       ; $(PY) main.py intel $(FUNNEL_DAYS)
 
 fetch:
 	@for kw in "python developer" "react javascript frontend" \

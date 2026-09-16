@@ -77,3 +77,6 @@ jobs:
           python main.py outcome 900000000000000001 hired
           python main.py outcomes
           python main.py funnel 30
+          python main.py bands 30
+          python main.py intel 30 --out /tmp/exports/market_intel_latest.json
+          python main.py explain 9000000000000000001

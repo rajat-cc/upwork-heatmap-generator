@@ -47,6 +47,14 @@ Beta-shrunk win rate (flagged below five submissions), connects spent, cost per
 hire, median submitted and winning bids, and all of it by category, client
 segment, budget band, experience, hour notified, platform and workflow.
 
+### 4. Price and score
+
+| Lens | What it answers |
+|---|---|
+| **Bid bands** (`make bands`) | What the market pays: p25 / median / p75 by workflow × client segment × experience × budget type, rolling up to the workflow or budget-type band when a cell has fewer than 8 jobs, with your own submitted bids placed against the band and coloured by outcome |
+| **Personal score** (`python main.py explain <job_id>`) | One 0–100 number per job built from six named components, every constant in `scoring.toml`, every component printed |
+| **Market intel** (`make intel`) | `exports/market_intel_latest.json`: bands, demand by axis, watch suggestions, funnel summary. Aggregates only, no job ids or text, validated against `docs/market_intel.schema.json` before it is written |
+
 Excel exports for all lenses go to `exports/`.
 
 ---
@@ -96,7 +104,7 @@ make n8n N8N_DAYS=30 LIMIT=2000  # bigger pull
 make n8n-local                   # skip API, re-analyze local DB only
 
 # Sync & retention
-make sync                        # fetch watches → classify → snapshots → purge → exports/status.json
+make sync                        # fetch → classify → snapshots → purge → ingest ledger → intel JSON → status.json
 make sync-offline                # same path on a recorded page (no token needed)
 make purge                       # dry-run of the 24h text purge (python main.py purge to apply)
 make install-service             # launchd job: sync every 2 hours (uninstall-service removes it)
@@ -107,6 +115,11 @@ python main.py outcome <job id|url> submitted --bid 45 --bid-type hourly --conne
 python main.py outcome <job id|url> hired    # also: viewed · interview · lost
 make funnel                      # stages, shrunk win rate, cost per hire, by segment (FUNNEL_DAYS=30)
 make outcomes                    # what you recorded recently
+
+# Price & score
+make bands                       # bid bands (p25/median/p75) by workflow × segment × experience, and your bids vs band
+make intel                       # exports/market_intel_latest.json — aggregates only, for the proposal agent
+python main.py explain <job_id>  # the score decomposition for one job (constants in scoring.toml)
 
 # Data management
 make fetch                       # one-off keyword sweep (8 themes)
@@ -192,6 +205,7 @@ upwork_demand_analysis/
 │   ├── watches.py           #   watches.txt parser (pasted Upwork search URLs)
 │   ├── service.py           #   launchd LaunchAgent for the periodic sync
 │   ├── lens.py              #   Lens protocol (analyze → render → export) + run_lens
+│   ├── scoring.py           #   personal score from scoring.toml; `explain` decomposition
 │   └── xlsx_helpers.py      #   openpyxl header/style helpers
 │
 ├── taxonomies/              # domain knowledge (what counts as what)
@@ -214,7 +228,10 @@ upwork_demand_analysis/
 │   │   ├── outcomes.py      #   `outcome` command: DB row + monthly JSONL ledger
 │   │   ├── analyzer.py      #   stages, Beta-shrunk win rate, connects economics, segments
 │   │   ├── renderer.py / exporter.py
+│   │   ├── vendor.py        #   vendorProposals → ledger (gated on docs/api_probe.json)
 │   │   └── api.py           #   FunnelLens (implements core.lens.Lens)
+│   ├── bands/               #   bid bands lens (p25/median/p75 + your bids vs band)
+│   ├── intel/               #   market_intel_latest.json producer + schema validator
 │   └── n8n/                 #   n8n automation demand
 │       ├── classifier.py    #   regex tagging (4 axes) + opp_score + cache persist
 │       ├── analyzer.py      #   cache-first load (FTS ∪ cached labels) + aggregate
@@ -222,9 +239,11 @@ upwork_demand_analysis/
 │       ├── exporter.py      #   6-sheet Excel
 │       └── api.py           #   public: run(days, fetch, limit)
 │
-├── tests/                   # 111 tests: client, probe, sync, migrations, purge, snapshots, ingest, funnel, …
+├── tests/                   # 124 tests: client, probe, sync, migrations, purge, ingest, funnel, scoring, bands, …
 │   └── fixtures/graphql/    #   recorded responses for offline runs (probe --offline, CI smoke)
 ├── .github/workflows/ci.yml # pytest + lint on every PR
+├── scoring.toml             # every scoring constant, versioned
+├── docs/                    # api_probe.json (live probe), market_intel.schema.json
 ├── pyproject.toml           # project metadata + pytest + ruff config
 ├── Makefile                 # one-line wrappers for everything
 └── exports/                 # auto-generated .xlsx (git-ignored)
@@ -286,17 +305,32 @@ competition     = 1 / (1 + median_proposals / 10)
 opportunity_score = (demand_norm × 0.45 + budget_norm × 0.30 + competition × 0.25) × 100
 ```
 
-### Opportunity Score — n8n (per job, 0-100)
+### Personal opportunity score (per job, 0-100)
+
+Six components, each normalised to 0–1 and weighted (`scoring.toml`, `[weights]`):
 
 ```
-budget_score    = clamp(rate/$100  if hourly,
-                        amount/$5k if fixed,
-                        else 0.2,  to [0, 1])
-verified_score  = 1.0 if client verified else 0.3
-competition     = 1 / (1 + proposals / 15)
+win_probability  shrunk win rate of the job's client segment from your funnel
+                 (a prior per segment until 5 submissions exist there)
+expected_value   budget ÷ cap ($100/hr or $5k fixed) × duration factor
+hire_rate        client hires ÷ posted jobs (0.5 when unknown)
+freshness        0.5 ^ (hours since publish / 24)
+competition      1 / (1 + applicants / 15)
+fit              overlap with UPWORK_PORTFOLIO_TAGS (0.5 when no file)
 
-opp_score = (budget × 0.50 + verified × 0.20 + competition × 0.30) × 100
+total = Σ weight × component × 100
 ```
+
+`python main.py explain <job_id>` prints the input, normalised value, weight and
+points of every component; every header and Excel summary carries the scoring
+version so a number can always be traced to the formula that produced it.
+
+### Bid bands
+p25 / median / p75 of hourly midpoints and fixed amounts per (workflow, client
+segment, experience, budget type). A cell needs `min_band_sample` (8) jobs;
+below that it rolls up to the workflow band, then to the budget-type band, and
+the row says which level it came from. Your SUBMITTED bids are placed against
+the most specific band available: below p25, in band, or above p75.
 
 ### Trend % (general dashboard)
 Compares the second half of the analysis window to the first half, counting only
@@ -364,20 +398,22 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 | `UPWORK_CONNECT_PRICE_USD` | `0.15` | What one connect costs you |
 | `UPWORK_DEFAULT_CONNECTS` | `12` | Connects assumed per submission when not recorded |
 | `UPWORK_OUTCOMES_DIR` | `data/outcomes` | Portable JSONL ledger of manual outcomes |
+| `UPWORK_SCORING_FILE` | `scoring.toml` | Alternative scoring constants file |
+| `UPWORK_PORTFOLIO_TAGS` | — | One term per line; drives the score's `fit` component |
 
 ---
 
 ## Testing
 
 ```bash
-make test         # 111 tests in ~2s
+make test         # 124 tests in ~2s
 make test-cov     # with coverage report
 make lint         # ruff check + format
 ```
 
 Tests cover the regex taxonomies, the classifier behaviour against fixture jobs, the opportunity score formula across boundary inputs, migration idempotency on a fresh DB, and the GraphQL response parser.
 
-CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline → ingest → outcome → funnel` end-to-end without any API access.
+CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline → ingest → outcome → funnel → bands → intel → explain` end-to-end without any API access.
 
 ---
 
