@@ -8,25 +8,26 @@ from rich.panel import Panel
 from rich.table import Table
 
 from core.models import Job, N8nReport
-from core.rich_helpers import bar, color_cell, fmt_money, make_table, short
+from core.rich_helpers import bar, color_cell, data_as_of_line, fmt_band, make_table, short
 from taxonomies.n8n import abbr_workflow
 
 console = Console()
 
 
-def render(report: N8nReport, days: int) -> None:
+def render(report: N8nReport, days: int, *, last_fetch: str | None = None) -> None:
     if report.total_jobs == 0:
         console.print(
             Panel(
                 "[yellow]No n8n jobs found in this window.[/yellow]\n"
-                "Try:  [cyan]make n8n N8N_DAYS=14[/cyan]",
+                f"{data_as_of_line(last_fetch)}\n"
+                "Try:  [cyan]make sync[/cyan] then [cyan]make n8n N8N_DAYS=14[/cyan]",
                 title="n8n Demand",
                 border_style="yellow",
             )
         )
         return
 
-    _render_headline(report, days)
+    _render_headline(report, days, last_fetch)
     _render_workflow_demand(report)
     _render_industry_demand(report)
     _render_stack_demand(report)
@@ -34,17 +35,19 @@ def render(report: N8nReport, days: int) -> None:
     _render_top_opportunities(report)
 
 
-def _render_headline(report: N8nReport, days: int) -> None:
+def _render_headline(report: N8nReport, days: int, last_fetch: str | None) -> None:
     top_wf = ", ".join(f"[bold]{n}[/bold] ({c})" for n, c in report.workflow_count[:3]) or "—"
     top_st = ", ".join(f"[bold]{n}[/bold] ({c})" for n, c in report.stack_count[:5]) or "—"
+    purged = sum(1 for j in report.jobs if j.is_purged)
 
     body = (
         f"[bold cyan]{report.total_jobs}[/bold cyan] n8n jobs in the last "
-        f"[bold]{days}[/bold] days\n\n"
+        f"[bold]{days}[/bold] days  ·  {data_as_of_line(last_fetch)}\n\n"
         f"[bright_black]Top workflows:[/bright_black] {top_wf}\n"
         f"[bright_black]Top stacks:   [/bright_black] {top_st}\n\n"
         f"[bright_black]Unclassified industry: {report.unclassified_industry}  ·  "
-        f"unclassified workflow: {report.unclassified_workflow}[/bright_black]"
+        f"unclassified workflow: {report.unclassified_workflow}  ·  "
+        f"analysed from cached labels (text purged): {purged}[/bright_black]"
     )
     console.print(Panel(body, title="n8n Demand · Snapshot", border_style="cyan", padding=(1, 2)))
 
@@ -54,12 +57,12 @@ def _render_workflow_demand(report: N8nReport) -> None:
     if not items:
         return
 
-    table = make_table("Workflow Demand  ·  money & competition signals")
+    table = make_table("Workflow Demand  ·  money & competition signals  ·  median (p25–p75)")
     table.add_column("Workflow", style="bold white", min_width=24, no_wrap=True)
     table.add_column("Jobs", justify="right", style="cyan", width=5)
     table.add_column("%", justify="right", style="green", width=4)
-    table.add_column("Med $/hr", justify="right", style="green", width=9)
-    table.add_column("Med Fixed", justify="right", style="yellow", width=10)
+    table.add_column("Med $/hr", justify="right", style="green", min_width=14)
+    table.add_column("Med Fixed", justify="right", style="yellow", min_width=16)
     table.add_column("Props", justify="right", width=6)
     table.add_column("Verif", justify="right", style="magenta", width=6)
 
@@ -70,9 +73,9 @@ def _render_workflow_demand(report: N8nReport) -> None:
             name,
             str(count),
             f"{round(count / total * 100)}",
-            fmt_money(s.med_hourly, "/hr") if s.med_hourly else "—",
-            fmt_money(s.med_fixed) if s.med_fixed else "—",
-            f"{s.avg_proposals:.0f}" if s.avg_proposals else "—",
+            fmt_band(s.hourly_p25, s.med_hourly, s.hourly_p75, "/hr"),
+            fmt_band(s.fixed_p25, s.med_fixed, s.fixed_p75),
+            f"{s.med_proposals:.0f}" if s.med_proposals else "—",
             f"{s.verified_pct}%",
         )
     console.print(table)
@@ -199,7 +202,7 @@ def _render_top_opportunities(report: N8nReport) -> None:
         verified = " [green]✓[/green]" if j.client_verified else ""
         table.add_row(
             str(i),
-            short(j.title, 36),
+            short(j.display_title, 36),
             short(wf, 14),
             _budget_label_short(j),
             str(j.total_applicants) + verified,

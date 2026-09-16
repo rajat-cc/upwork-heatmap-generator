@@ -1,16 +1,22 @@
-"""Read jobs from the DB and aggregate into an N8nReport."""
+"""Read jobs from the DB and aggregate into an N8nReport.
+
+Cache-first: the population is the union of jobs whose remaining text
+matches `n8n` and jobs whose cached `platform` label is `n8n`. Rows whose
+text was purged by the retention job are analysed from their cached labels,
+so the 24 h text limit does not shrink the analysis window.
+"""
 
 from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime, timedelta
-from statistics import median
 
 from core.logging_setup import get_logger
 from core.models import Job, N8nReport, WorkflowStats
-from db import get_conn, search_jobs_fts
-from features.n8n.classifier import classify
+from core.stats import band, median
+from db import get_jobs_by_ids, job_ids_with_label, load_classifications, search_jobs_fts
+from features.n8n.classifier import apply_cached, classify
 
 log = get_logger(__name__)
 
@@ -19,37 +25,41 @@ _N8N_RE = re.compile(r"\bn8n\b", re.IGNORECASE)
 
 
 def load_n8n_jobs(days: int = 7) -> list[Job]:
-    """Two-stage filter:
+    """Three-stage filter:
 
     1. FTS5 `MATCH 'n8n'` against title+description+skills — fast index scan
-    2. Strict `\\bn8n\\b` regex re-validation — kills "n8nx"/URL false positives
+    2. cached `platform = n8n` labels — covers rows whose text was purged
+    3. strict `\\bn8n\\b` regex re-validation on rows that still have text
     """
     cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
 
-    candidate_ids = search_jobs_fts("n8n", since_iso=cutoff)
+    fts_ids = set(search_jobs_fts("n8n", since_iso=cutoff))
+    cached_ids = set(job_ids_with_label("platform", "n8n", since_iso=cutoff))
+    candidate_ids = fts_ids | cached_ids
     if not candidate_ids:
         log.info("No n8n candidates in the last %d days", days)
         return []
 
-    placeholders = ",".join("?" * len(candidate_ids))
-    with get_conn() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM jobs WHERE id IN ({placeholders})",
-            candidate_ids,
-        ).fetchall()
-
     jobs: list[Job] = []
-    for r in rows:
+    for r in get_jobs_by_ids(sorted(candidate_ids)):
         j = Job.from_row(r)
-        if not _N8N_RE.search(j.haystack):
+        if j.is_purged:
+            if j.id in cached_ids:
+                jobs.append(j)
             continue
-        jobs.append(j)
-    log.info("Loaded %d n8n jobs (FTS5 candidates: %d)", len(jobs), len(candidate_ids))
+        if _N8N_RE.search(j.haystack):
+            jobs.append(j)
+    log.info(
+        "Loaded %d n8n jobs (FTS candidates: %d, cached: %d)",
+        len(jobs),
+        len(fts_ids),
+        len(cached_ids),
+    )
     return jobs
 
 
 def analyze(jobs: list[Job]) -> N8nReport:
-    """Tag every job and aggregate."""
+    """Tag every job (live regex, or cached labels when the text is gone) and aggregate."""
     industry_count: Counter[str] = Counter()
     workflow_count: Counter[str] = Counter()
     stack_count: Counter[str] = Counter()
@@ -61,8 +71,14 @@ def analyze(jobs: list[Job]) -> N8nReport:
     unclassified_industry = 0
     unclassified_workflow = 0
 
+    purged_ids = [j.id for j in jobs if j.is_purged]
+    cached = load_classifications(purged_ids) if purged_ids else {}
+
     for job in jobs:
-        classify(job)
+        if job.is_purged:
+            apply_cached(job, cached.get(job.id))
+        else:
+            classify(job)
 
         if not job.industries:
             unclassified_industry += 1
@@ -121,9 +137,17 @@ def _money_stats(jobs: list[Job]) -> WorkflowStats:
         if j.client_verified:
             verified += 1
 
+    h25, h50, h75 = band(hourly)
+    f25, f50, f75 = band(fixed)
     return WorkflowStats(
-        med_hourly=round(median(hourly), 1) if hourly else 0,
-        med_fixed=round(median(fixed), 0) if fixed else 0,
-        avg_proposals=sum(proposals) / len(proposals) if proposals else 0,
+        med_hourly=round(h50, 1),
+        med_fixed=round(f50, 0),
+        med_proposals=median(proposals),
         verified_pct=round(verified / len(jobs) * 100) if jobs else 0,
+        hourly_p25=round(h25, 1),
+        hourly_p75=round(h75, 1),
+        fixed_p25=round(f25, 0),
+        fixed_p75=round(f75, 0),
+        n_hourly=len(hourly),
+        n_fixed=len(fixed),
     )

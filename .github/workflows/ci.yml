@@ -60,9 +60,16 @@ jobs:
           python main.py fetch --help
           python main.py probe --help
 
-      - name: Seed + analyze + offline probe (no API needed)
+      - name: Seed + sync + analyze + offline probe (no API needed)
+        env:
+          UPWORK_EXPORTS_DIR: /tmp/exports
         run: |
           python main.py seed 7
+          python main.py sync --offline
           python main.py n8n 7 -n
           python main.py skills 7
+          python main.py dashboard 7
+          python main.py purge --dry-run
+          python main.py install-service --dry-run
           python main.py probe --offline --out /tmp/api_probe.json
+          test -f /tmp/exports/status.json

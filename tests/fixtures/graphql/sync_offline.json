@@ -1,0 +1,78 @@
+{
+  "_note": "Synthetic single page for `main.py sync --offline` and tests. Shapes mirror the search API; content is illustrative.",
+  "OrgId": {"data": {"organization": {"id": "offline-org"}}},
+  "SearchJobs": {
+    "data": {
+      "marketplaceJobPostingsSearch": {
+        "totalCount": 3,
+        "pageInfo": {"hasNextPage": false, "endCursor": "3"},
+        "edges": [
+          {"node": {
+            "id": "9000000000000000001",
+            "title": "n8n voice agent for a dental clinic (Vapi + Google Calendar)",
+            "description": "Our dental clinic needs an n8n workflow that answers inbound calls with a Vapi voice agent, books appointments into Google Calendar and logs patient intake to Airtable. HIPAA awareness required.",
+            "publishedDateTime": "2026-09-15T09:12:00+0000",
+            "experienceLevel": "EXPERT",
+            "category": "Web, Mobile & Software Dev",
+            "durationLabel": "1 to 3 months",
+            "premium": false,
+            "enterprise": false,
+            "totalApplicants": 7,
+            "skills": [{"name": "n8n"}, {"name": "automation"}, {"name": "vapi"}],
+            "amount": {"rawValue": null},
+            "hourlyBudgetMin": {"rawValue": "40"},
+            "hourlyBudgetMax": {"rawValue": "70"},
+            "client": {
+              "totalHires": 12, "totalPostedJobs": 20,
+              "totalSpent": {"rawValue": "48000"}, "verificationStatus": "VERIFIED",
+              "totalFeedback": 4.9, "location": {"country": "United States"}
+            }
+          }},
+          {"node": {
+            "id": "9000000000000000002",
+            "title": "Make.com scenario: HubSpot to Slack lead alerts for a marketing agency",
+            "description": "We run a marketing agency and want a Make.com scenario that watches HubSpot deals and posts formatted Slack alerts. Zapier alternative considered.",
+            "publishedDateTime": "2026-09-15T08:40:00+0000",
+            "experienceLevel": null,
+            "category": "Sales & Marketing",
+            "durationLabel": "Less than 1 month",
+            "premium": false,
+            "enterprise": false,
+            "totalApplicants": 22,
+            "skills": [{"name": "make.com"}, {"name": "hubspot"}],
+            "amount": {"rawValue": "600"},
+            "hourlyBudgetMin": {"rawValue": null},
+            "hourlyBudgetMax": {"rawValue": null},
+            "client": {
+              "totalHires": 0, "totalPostedJobs": 1,
+              "totalSpent": {"rawValue": "0"}, "verificationStatus": "VERIFIED",
+              "totalFeedback": 0, "location": {"country": "GBR"}
+            }
+          }},
+          {"node": {
+            "id": "9000000000000000003",
+            "title": "Python data pipeline into PostgreSQL",
+            "description": "Build a nightly Python ETL that loads vendor CSVs into PostgreSQL with data validation and a small reporting dashboard.",
+            "publishedDateTime": "2026-09-14T22:05:00+0000",
+            "experienceLevel": "INTERMEDIATE",
+            "category": "Data Science & Analytics",
+            "durationLabel": "3 to 6 months",
+            "premium": false,
+            "enterprise": false,
+            "totalApplicants": 41,
+            "skills": [{"name": "python"}, {"name": "postgresql"}, {"name": "etl"}],
+            "amount": {"rawValue": "2500"},
+            "hourlyBudgetMin": {"rawValue": null},
+            "hourlyBudgetMax": {"rawValue": null},
+            "client": {
+              "totalHires": 3, "totalPostedJobs": 9,
+              "totalSpent": {"rawValue": "5200"}, "verificationStatus": "NOT_VERIFIED",
+              "totalFeedback": 4.2, "location": {"country": "India"}
+            }
+          }}
+        ]
+      }
+    },
+    "errors": [{"message": "Cannot return null for non-nullable field experienceLevel"}]
+  }
+}

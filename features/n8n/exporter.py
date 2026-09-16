@@ -9,13 +9,12 @@ from openpyxl import Workbook
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.utils import get_column_letter
 
+from config import EXPORTS_DIR
 from core.models import Job, N8nReport
 from core.xlsx_helpers import BOLD, CENTER, HDR_FILL, HDR_FONT, LEFT, NORMAL, RIGHT, write_header
 
-EXPORTS_DIR = "exports"
 
-
-def export(report: N8nReport, days: int) -> str:
+def export(report: N8nReport, days: int, *, data_as_of: str = "") -> str:
     """Build workbook; return path. Also writes `n8n_demand_latest.xlsx`."""
     os.makedirs(EXPORTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -24,7 +23,7 @@ def export(report: N8nReport, days: int) -> str:
     wb = Workbook()
     wb.remove(wb.active)
 
-    _xl_summary(wb, report, days)
+    _xl_summary(wb, report, days, data_as_of)
     _xl_workflow(wb, report)
     _xl_industry(wb, report)
     _xl_stack(wb, report)
@@ -36,11 +35,12 @@ def export(report: N8nReport, days: int) -> str:
     return path
 
 
-def _xl_summary(wb: Workbook, report: N8nReport, days: int) -> None:
+def _xl_summary(wb: Workbook, report: N8nReport, days: int, data_as_of: str = "") -> None:
     ws = wb.create_sheet("Summary")
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 50
     rows = [
+        ("Data as of", data_as_of or "unknown"),
         ("Window", f"Last {days} days"),
         ("Total n8n jobs", report.total_jobs),
         ("Top workflow", report.workflow_count[0][0] if report.workflow_count else "—"),
@@ -62,11 +62,17 @@ def _xl_workflow(wb: Workbook, report: N8nReport) -> None:
         "Jobs",
         "Share %",
         "Med Hourly $",
+        "Hourly p25",
+        "Hourly p75",
+        "n Hourly",
         "Med Fixed $",
-        "Avg Proposals",
+        "Fixed p25",
+        "Fixed p75",
+        "n Fixed",
+        "Med Proposals",
         "Verified %",
     ]
-    widths = [4, 28, 7, 9, 13, 13, 13, 11]
+    widths = [4, 28, 7, 9, 13, 11, 11, 9, 13, 11, 11, 8, 13, 11]
     write_header(ws, headers, widths)
 
     total = report.total_jobs
@@ -75,20 +81,22 @@ def _xl_workflow(wb: Workbook, report: N8nReport) -> None:
         r = i + 1
         ws.cell(row=r, column=1, value=i).alignment = CENTER
         ws.cell(row=r, column=2, value=name).font = BOLD
-        ws.cell(row=r, column=3, value=count).alignment = RIGHT
-        ws.cell(
-            row=r, column=4, value=round(count / total * 100, 1) if total else 0
-        ).alignment = RIGHT
-        ws.cell(
-            row=r, column=5, value=round(s.med_hourly, 2) if s.med_hourly else None
-        ).alignment = RIGHT
-        ws.cell(
-            row=r, column=6, value=round(s.med_fixed, 2) if s.med_fixed else None
-        ).alignment = RIGHT
-        ws.cell(
-            row=r, column=7, value=round(s.avg_proposals, 1) if s.avg_proposals else None
-        ).alignment = RIGHT
-        ws.cell(row=r, column=8, value=s.verified_pct).alignment = RIGHT
+        values = [
+            count,
+            round(count / total * 100, 1) if total else 0,
+            round(s.med_hourly, 2) if s.med_hourly else None,
+            round(s.hourly_p25, 2) if s.hourly_p25 else None,
+            round(s.hourly_p75, 2) if s.hourly_p75 else None,
+            s.n_hourly,
+            round(s.med_fixed, 2) if s.med_fixed else None,
+            round(s.fixed_p25, 2) if s.fixed_p25 else None,
+            round(s.fixed_p75, 2) if s.fixed_p75 else None,
+            s.n_fixed,
+            round(s.med_proposals, 1) if s.med_proposals else None,
+            s.verified_pct,
+        ]
+        for c, val in enumerate(values, 3):
+            ws.cell(row=r, column=c, value=val).alignment = RIGHT
     last = len(report.workflow_count) + 1
     if last > 1:
         ws.conditional_formatting.add(
@@ -194,7 +202,7 @@ def _xl_jobs(wb: Workbook, report: N8nReport) -> None:
         r = i + 1
         ws.cell(row=r, column=1, value=round(j.opp_score)).alignment = CENTER
         ws.cell(row=r, column=2, value=(j.published_at or "")[:10]).alignment = CENTER
-        ws.cell(row=r, column=3, value=j.title).alignment = LEFT
+        ws.cell(row=r, column=3, value=j.display_title).alignment = LEFT
         ws.cell(row=r, column=4, value=", ".join(j.industries)).alignment = LEFT
         ws.cell(row=r, column=5, value=", ".join(j.workflows)).alignment = LEFT
         ws.cell(row=r, column=6, value=", ".join(j.stacks)).alignment = LEFT

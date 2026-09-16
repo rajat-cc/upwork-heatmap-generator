@@ -72,6 +72,55 @@ def cmd_probe(args: argparse.Namespace) -> None:
     run_probe(offline=args.offline, out=args.out)
 
 
+def cmd_sync(args: argparse.Namespace) -> None:
+    from features.sync import run as run_sync
+
+    result = run_sync(
+        offline=args.offline,
+        snapshots=not args.no_snapshots,
+        purge=not args.no_purge,
+        since_days=args.since_days,
+        limit=args.limit,
+    )
+    raise SystemExit(result.exit_code())
+
+
+def cmd_purge(args: argparse.Namespace) -> None:
+    from config import PURGE_FIELDS, PURGE_TEXT_HOURS
+    from db import purge_text
+
+    init_db()
+    hours = PURGE_TEXT_HOURS if args.hours is None else args.hours
+    n = purge_text(hours, PURGE_FIELDS, dry_run=args.dry_run)
+    verb = "would blank" if args.dry_run else "blanked"
+    console.print(
+        f"  {verb} {', '.join(PURGE_FIELDS)} on [cyan]{n}[/cyan] job(s) last fetched "
+        f"more than {hours} h ago" + ("  [dim](dry run)[/dim]\n" if args.dry_run else "\n")
+    )
+
+
+def cmd_install_service(args: argparse.Namespace) -> None:
+    from core.service import LABEL, install
+
+    path, data = install(interval=args.interval, dry_run=args.dry_run)
+    if args.dry_run:
+        console.print(data.decode())
+        console.print(f"  [dim]dry run — would write[/dim] {path}\n")
+        return
+    console.print(
+        f"  [green]Installed[/green] {LABEL}: sync every {args.interval // 60} min\n"
+        f"  plist: {path}\n  logs:  ~/Library/Logs/upwork-intel/\n"
+        f"  [dim]check:[/dim] launchctl list | grep upwork-intel\n"
+    )
+
+
+def cmd_uninstall_service(args: argparse.Namespace) -> None:
+    from core.service import LABEL, uninstall
+
+    removed = uninstall()
+    console.print(f"  {'Removed' if removed else 'Not installed:'} {LABEL}\n")
+
+
 def cmd_dashboard(args: argparse.Namespace) -> None:
     run_dashboard(
         days=args.days,
@@ -108,6 +157,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "  python main.py dashboard 14 -t Asia/Kolkata -w 30\n"
             "  python main.py fetch -k python ai -l 1000\n"
             "  python main.py probe                 # which API queries/fields this key can use\n"
+            "  python main.py sync                  # fetch watches + classify + purge (launchd runs this)\n"
+            "  python main.py install-service       # run sync every 2 hours via launchd\n"
             "  python main.py skills 7\n"
             "  python main.py shift 14 -t America/New_York\n"
             "  python main.py n8n 7                 # fetch + analyze last 7d of n8n jobs\n"
@@ -161,6 +212,23 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Where to write the JSON report (default: docs/api_probe.json)",
     )
+
+    p = sub.add_parser("sync", help="Fetch watches, classify, snapshot, purge, write status.json")
+    p.add_argument("--offline", action="store_true", help="Replay the recorded page (CI smoke)")
+    p.add_argument("--no-snapshots", action="store_true", help="Skip detail-stage snapshots")
+    p.add_argument("--no-purge", action="store_true", help="Skip the retention purge")
+    p.add_argument("--since-days", type=int, metavar="N", help="Lookback per watch (default 2)")
+    p.add_argument("-l", "--limit", type=int, metavar="N", help="Max jobs per watch (default 300)")
+
+    p = sub.add_parser("purge", help="Blank fetched text older than the retention limit")
+    p.add_argument("--dry-run", action="store_true", help="Count only; change nothing")
+    p.add_argument("--hours", type=int, metavar="H", help="Override UPWORK_PURGE_TEXT_HOURS")
+
+    p = sub.add_parser("install-service", help="Install the launchd job that runs sync")
+    p.add_argument("--interval", type=int, default=7200, metavar="SECONDS", help="Default 7200")
+    p.add_argument("--dry-run", action="store_true", help="Print the plist without installing")
+
+    sub.add_parser("uninstall-service", help="Remove the launchd sync job")
 
     p = sub.add_parser("skills", help="Show skills demand heatmap")
     p.add_argument(
@@ -217,6 +285,10 @@ def main() -> None:
         "dashboard": cmd_dashboard,
         "n8n": cmd_n8n,
         "probe": cmd_probe,
+        "sync": cmd_sync,
+        "purge": cmd_purge,
+        "install-service": cmd_install_service,
+        "uninstall-service": cmd_uninstall_service,
     }
     try:
         dispatch[args.command](args)

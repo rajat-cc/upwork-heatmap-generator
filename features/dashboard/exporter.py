@@ -6,7 +6,8 @@ from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-EXPORTS_DIR = "exports"
+from config import EXPORTS_DIR
+
 DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # ── Palette ──────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ def export_dashboard(
     shift_rec: dict,
     tz_name: str,
     days: int,
+    data_as_of: str = "",
 ) -> str:
     """Build a timestamped Excel workbook and return its path."""
     os.makedirs(EXPORTS_DIR, exist_ok=True)
@@ -45,7 +47,7 @@ def export_dashboard(
     wb = Workbook()
     wb.remove(wb.active)  # remove default blank sheet
 
-    _sheet_skills(wb, skills_data, days)
+    _sheet_skills(wb, skills_data, days, data_as_of)
     _sheet_client_quality(wb, client_data, days)
     _sheet_client_countries(wb, client_data)
     _sheet_volume_heatmap(wb, volume_matrix, tz_name, days)
@@ -61,7 +63,7 @@ def export_dashboard(
 # ── Sheet builders ────────────────────────────────────────────────────────────
 
 
-def _sheet_skills(wb: Workbook, data: list, days: int):
+def _sheet_skills(wb: Workbook, data: list, days: int, data_as_of: str = ""):
     ws = wb.create_sheet("Skills Demand")
     ws.freeze_panes = "A2"
 
@@ -71,29 +73,20 @@ def _sheet_skills(wb: Workbook, data: list, days: int):
         "Jobs",
         "Trend %",
         "Opp Score",
-        "Avg Proposals",
-        "Avg Hourly ($)",
-        "Avg Fixed ($)",
+        "Med Proposals",
+        "Med Hourly ($)",
+        "Hourly p25",
+        "Hourly p75",
+        "Med Fixed ($)",
+        "Fixed p25",
+        "Fixed p75",
         "% Hourly",
         "Entry %",
         "Mid %",
         "Expert %",
     ]
-    col_widths = [4, 22, 8, 10, 10, 14, 14, 14, 10, 9, 9, 9]
-    col_aligns = [
-        _CENTER,
-        _LEFT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-        _RIGHT,
-    ]
+    col_widths = [4, 22, 8, 10, 10, 14, 14, 11, 11, 14, 11, 11, 10, 9, 9, 9]
+    col_aligns = [_CENTER, _LEFT] + [_RIGHT] * (len(headers) - 2)
 
     _write_header(ws, headers, col_widths)
 
@@ -101,16 +94,20 @@ def _sheet_skills(wb: Workbook, data: list, days: int):
         r = i + 1
         fill = _ALT_FILL if i % 2 == 0 else None
         trend = row["trend_pct"]
-        trend_str = "new" if trend is None else f"{trend:+.0f}%"
+        trend_str = "n/a" if trend is None else f"{trend:+.0f}%"
         values = [
             i,
             row["skill"],
             row["count"],
             trend_str,
             row["opportunity_score"],
-            round(row["avg_proposals"], 1) if row["avg_proposals"] else 0,
-            round(row["avg_hourly"], 2) if row["avg_hourly"] else 0,
-            round(row["avg_fixed"], 2) if row["avg_fixed"] else 0,
+            round(row["med_proposals"], 1) if row["med_proposals"] else 0,
+            round(row["med_hourly"], 2) if row["med_hourly"] else 0,
+            round(row["hourly_p25"], 2) if row["hourly_p25"] else 0,
+            round(row["hourly_p75"], 2) if row["hourly_p75"] else 0,
+            round(row["med_fixed"], 2) if row["med_fixed"] else 0,
+            round(row["fixed_p25"], 2) if row["fixed_p25"] else 0,
+            round(row["fixed_p75"], 2) if row["fixed_p75"] else 0,
             row["hourly_pct"],
             row["entry_pct"],
             row["mid_pct"],
@@ -146,9 +143,9 @@ def _sheet_skills(wb: Workbook, data: list, days: int):
     )
 
     ws.sheet_properties.tabColor = "1F3864"
-    ws["A1"].value = f"Skills Demand — Last {days} days"
+    suffix = f"  ·  data as of {data_as_of}" if data_as_of else ""
     ws.insert_rows(1)
-    _style_title_row(ws, 1, len(headers), f"Skills Demand — Last {days} days")
+    _style_title_row(ws, 1, len(headers), f"Skills Demand — Last {days} days{suffix}", insert=False)
 
 
 def _sheet_client_quality(wb: Workbook, cs: dict, days: int):
@@ -165,7 +162,7 @@ def _sheet_client_quality(wb: Workbook, cs: dict, days: int):
         ("Champion", q.get("champion", 0), "Verified, $10k+ spent, 5+ hires"),
         ("Active", q.get("active", 0), "Verified, ≥1 hire"),
         ("New", q.get("new", 0), "Verified, never hired"),
-        ("Risky", q.get("risky", 0), "Unverified or 0 hires"),
+        ("Risky", q.get("risky", 0), "Not payment-verified"),
     ]
     seg_fills = [
         PatternFill("solid", fgColor="D6EAD6"),  # champion — green
@@ -196,18 +193,29 @@ def _sheet_client_countries(wb: Workbook, cs: dict):
     ws = wb.create_sheet("Client Countries")
     ws.freeze_panes = "A2"
 
-    headers = ["Country", "Jobs", "Verified %", "Avg Hires", "Avg Budget ($)"]
-    col_widths = [24, 8, 12, 12, 16]
-    col_aligns = [_LEFT, _RIGHT, _RIGHT, _RIGHT, _RIGHT]
+    headers = [
+        "Country",
+        "Code",
+        "Jobs",
+        "Verified %",
+        "Med Hire Rate %",
+        "Avg Hires",
+        "Avg Budget ($)",
+    ]
+    col_widths = [24, 6, 8, 12, 16, 12, 16]
+    col_aligns = [_LEFT, _CENTER, _RIGHT, _RIGHT, _RIGHT, _RIGHT, _RIGHT]
     _write_header(ws, headers, col_widths)
 
     for i, c_data in enumerate(cs.get("countries", []), 1):
         r = i + 1
         fill = _ALT_FILL if i % 2 == 0 else None
+        rate = c_data.get("med_hire_rate")
         values = [
+            c_data.get("country_name") or c_data["country"],
             c_data["country"],
             c_data["count"],
             c_data["verified_pct"],
+            round(rate * 100) if rate is not None else None,
             round(c_data["avg_hires"], 1) if c_data["avg_hires"] else 0,
             round(c_data["avg_budget"], 2) if c_data["avg_budget"] else 0,
         ]
@@ -218,10 +226,10 @@ def _sheet_client_countries(wb: Workbook, cs: dict):
             if fill:
                 cell.fill = fill
 
-    # Color-scale Verified % (col C)
+    # Color-scale Verified % (col D)
     last = len(cs.get("countries", [])) + 1
     ws.conditional_formatting.add(
-        f"C2:C{last}",
+        f"D2:D{last}",
         ColorScaleRule(
             start_type="num",
             start_value=0,
