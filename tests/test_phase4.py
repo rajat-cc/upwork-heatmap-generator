@@ -212,7 +212,7 @@ def test_clients_group_by_fingerprint(isolated_db):
     top = report.rows[0]
     assert top.posts == 2 and top.segment == "champion" and top.job_ids == ["c1", "c2"]
     assert top.your_submitted == 1 and top.your_hired == 1
-    assert abs(top.hire_rate - 6 / 9) < 1e-9
+    assert abs(top.hire_rate - 6 / 9) < 1e-3  # stored at four decimals
 
 
 # ─── digest ─────────────────────────────────────────────────────────────────
