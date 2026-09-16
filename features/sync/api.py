@@ -109,9 +109,10 @@ def run(
 
     lock = _acquire_lock()
     if lock is None:
+        # Leave status.json to the run that holds the lock: it is mid-flight and will
+        # write the real result; an empty "locked" record would only mislead the badge.
         result.error = "locked"
         result.finished_at = _now_iso()
-        _write_status(result)
         if not quiet:
             console.print("[yellow]Another sync is running (lock held); exiting.[/yellow]")
         return result

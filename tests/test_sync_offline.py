@@ -10,10 +10,11 @@ def test_sync_offline_end_to_end(isolated_db, tmp_path, monkeypatch):
     import db
     import fetcher
     from core.ratelimit import TokenBucket
+    from features.sync import api as sync_api  # binds the fixture path before ROOT_DIR moves
 
     monkeypatch.setattr(config, "EXPORTS_DIR", str(tmp_path / "exports"))
+    monkeypatch.setattr(config, "ROOT_DIR", str(tmp_path))  # the lock file lives under ROOT_DIR
     monkeypatch.setattr(fetcher, "_bucket", TokenBucket(rate_per_sec=1e9, burst=10**6))
-    from features.sync import api as sync_api
 
     result = sync_api.run(offline=True, quiet=True)
 
@@ -65,6 +66,7 @@ def test_sync_reports_reauth_and_exits_2(isolated_db, tmp_path, monkeypatch):
     import fetcher
 
     monkeypatch.setattr(config, "EXPORTS_DIR", str(tmp_path / "exports"))
+    monkeypatch.setattr(config, "ROOT_DIR", str(tmp_path))
     from features.sync import api as sync_api
 
     def _no_token():
@@ -79,3 +81,26 @@ def test_sync_reports_reauth_and_exits_2(isolated_db, tmp_path, monkeypatch):
     assert result.watches[0].status == "error"
     status = json.loads((tmp_path / "exports" / "status.json").read_text())
     assert status["error"] == "reauth" and status["ok"] is False
+
+
+def test_locked_run_exits_without_touching_status(isolated_db, tmp_path, monkeypatch):
+    import fcntl
+    import json
+
+    import config
+    from features.sync import api as sync_api
+
+    monkeypatch.setattr(config, "EXPORTS_DIR", str(tmp_path / "exports"))
+    monkeypatch.setattr(config, "ROOT_DIR", str(tmp_path))
+    (tmp_path / "exports").mkdir()
+    status = tmp_path / "exports" / "status.json"
+    status.write_text(json.dumps({"ok": True, "jobs_total": 42}))
+
+    holder = open(tmp_path / sync_api.LOCK_FILE, "w")  # noqa: SIM115 - held for the test
+    fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        result = sync_api.run(offline=True, quiet=True)
+    finally:
+        holder.close()
+    assert result.error == "locked" and result.exit_code() == 1
+    assert json.loads(status.read_text()) == {"ok": True, "jobs_total": 42}  # untouched
