@@ -7,7 +7,8 @@ LIMIT     ?= 1000
 BACKUPS_DIR ?= backups
 
 .PHONY: help setup setup-dev auth seed dashboard skills shift watch fetch \
-        n8n n8n-local probe test test-cov lint backup clean
+        n8n n8n-local probe sync sync-offline purge install-service uninstall-service \
+        test test-cov lint backup clean
 
 help:
 	@echo ""
@@ -27,6 +28,9 @@ help:
 	@echo "  make n8n N8N_DAYS=14       — same, custom window"
 	@echo "  make n8n-local             — re-analyze local DB only (no fetch)"
 	@echo "  make probe                 — check which API queries/fields this key can use"
+	@echo "  make sync                  — fetch watches, classify, snapshot, purge, write exports/status.json"
+	@echo "  make purge                 — dry-run of the 24h text purge (main.py purge to apply)"
+	@echo "  make install-service       — launchd job: sync every 2 hours (uninstall-service removes it)"
 	@echo ""
 	@echo "  make test                  — run pytest"
 	@echo "  make test-cov              — pytest with coverage report"
@@ -57,6 +61,11 @@ watch:       ; $(PY) main.py dashboard $(DAYS) -t $(TZ) -w 30
 n8n:         ; $(PY) main.py n8n $(N8N_DAYS) -l $(LIMIT)
 n8n-local:   ; $(PY) main.py n8n $(N8N_DAYS) -n
 probe:       ; $(PY) main.py probe
+sync:        ; $(PY) main.py sync
+sync-offline: ; $(PY) main.py sync --offline
+purge:       ; $(PY) main.py purge --dry-run
+install-service:   ; $(PY) main.py install-service
+uninstall-service: ; $(PY) main.py uninstall-service
 
 fetch:
 	@for kw in "python developer" "react javascript frontend" \

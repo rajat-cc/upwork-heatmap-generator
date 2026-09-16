@@ -26,6 +26,7 @@ env/
 
 # Exports (generated files)
 exports/
+.sync.lock
 
 # macOS
 .DS_Store

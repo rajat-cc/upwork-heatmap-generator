@@ -1,6 +1,6 @@
 # Upwork Job Intelligence
 
-> Terminal-based market intelligence for Upwork. Pulls live data from the Upwork GraphQL API, surfaces skills demand, client quality, BD shift windows, and **n8n automation demand by industry × workflow × stack** — so you know which automations to pre-build and pitch.
+> Terminal-based market intelligence for Upwork. A scheduled `sync` pulls your watched searches from the Upwork GraphQL API every two hours, classifies every job, keeps a time series of applicant counts, and purges fetched text after 24 hours. On top of that data: skills demand, client quality with hire rates, BD shift windows, and **automation demand by industry × workflow × stack** — so you know which automations to pre-build and pitch. Every table prints when its data was fetched.
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -51,9 +51,16 @@ make dashboard                   # full intelligence dashboard
 # 3. Connect to live Upwork data
 cp .env.example .env             # then fill in UPWORK_CLIENT_ID/SECRET
 make auth                        # one-time OAuth flow (opens browser)
-make fetch                       # broad keyword sweep
+make probe                       # what this key can query → docs/api_probe.json
+make sync                        # fetch your watches, classify, snapshot, purge
+make install-service             # …and keep doing that every 2 hours (launchd)
 make dashboard
 ```
+
+Watches (which searches `sync` runs) come from `UPWORK_WATCHES_FILE`, else the
+proposal agent's `watches.txt` (`UPWORK_AGENT_DIR`), else `watch_terms.txt`,
+else the single term `n8n`. Paste Upwork search URLs one per line as
+`Label | <url>`; category and subcategory filters are applied server-side.
 
 ---
 
@@ -75,8 +82,14 @@ make n8n N8N_DAYS=14
 make n8n N8N_DAYS=30 LIMIT=2000  # bigger pull
 make n8n-local                   # skip API, re-analyze local DB only
 
+# Sync & retention
+make sync                        # fetch watches → classify → snapshots → purge → exports/status.json
+make sync-offline                # same path on a recorded page (no token needed)
+make purge                       # dry-run of the 24h text purge (python main.py purge to apply)
+make install-service             # launchd job: sync every 2 hours (uninstall-service removes it)
+
 # Data management
-make fetch                       # broad keyword sweep (8 themes)
+make fetch                       # one-off keyword sweep (8 themes)
 make probe                       # which API queries/fields this key can use → docs/api_probe.json
 make backup                      # snapshot DB to backups/
 
@@ -155,11 +168,16 @@ upwork_demand_analysis/
 │   ├── rich_helpers.py      #   Table factory, color cells, fmt_money
 │   ├── probe.py             #   API capability probe (writes docs/api_probe.json)
 │   ├── ratelimit.py         #   blocking token-bucket limiter (5 req/s)
+│   ├── stats.py             #   median and p25–p75 band helpers
+│   ├── watches.py           #   watches.txt parser (pasted Upwork search URLs)
+│   ├── service.py           #   launchd LaunchAgent for the periodic sync
 │   └── xlsx_helpers.py      #   openpyxl header/style helpers
 │
 ├── taxonomies/              # domain knowledge (what counts as what)
 │   ├── compile.py           #   word-boundary regex compiler
 │   ├── n8n.py               #   INDUSTRIES, WORKFLOWS, STACKS, abbreviations
+│   ├── automation.py        #   PLATFORMS axis (n8n, Make, Zapier, GHL, Apps Script, …)
+│   ├── countries.py         #   country spellings → ISO 3166-1 alpha-2
 │   └── skills.py            #   skill name canonicalization (TECH_SKILLS, slug map)
 │
 ├── features/                # one subpackage per analysis lens
@@ -168,14 +186,16 @@ upwork_demand_analysis/
 │   │   ├── renderer.py
 │   │   ├── exporter.py
 │   │   └── api.py           #   public: run() / run_skills_only / run_shift_only
+│   ├── sync/                #   scheduled refresh (fetch → classify → snapshot → purge → status)
+│   │   └── api.py
 │   └── n8n/                 #   n8n automation demand
-│       ├── classifier.py    #   regex tagging + opp_score + cache persist
-│       ├── analyzer.py      #   FTS5 load + aggregate
+│       ├── classifier.py    #   regex tagging (4 axes) + opp_score + cache persist
+│       ├── analyzer.py      #   cache-first load (FTS ∪ cached labels) + aggregate
 │       ├── renderer.py      #   5 console tables
 │       ├── exporter.py      #   6-sheet Excel
 │       └── api.py           #   public: run(days, fetch, limit)
 │
-├── tests/                   # 56 tests: client, probe, upsert, seed, classifier, taxonomies, migration
+├── tests/                   # 95 tests: client, probe, sync, migrations, purge, snapshots, watches, stats, …
 │   └── fixtures/graphql/    #   recorded responses for offline runs (probe --offline, CI smoke)
 ├── .github/workflows/ci.yml # pytest + lint on every PR
 ├── pyproject.toml           # project metadata + pytest + ruff config
@@ -187,13 +207,14 @@ upwork_demand_analysis/
 
 ## Database schema
 
-Single SQLite file (`upwork_jobs.db`), 6 tables, FTS5 search, versioned migrations.
+Single SQLite file (`upwork_jobs.db`), 7 tables, FTS5 search, versioned migrations (schema v6).
 
 | Table | Purpose |
 |---|---|
 | `jobs` | One row per Upwork job (PK = Upwork id) |
 | `job_skills` | Normalised skill list — `(job_id, skill)` for fast skill queries |
-| `job_classifications` | Cached classifier output — `(job_id, axis, label, source, confidence)` where `source ∈ {regex, llm, manual}`. Lets a future LLM pass merge in without recomputing |
+| `job_classifications` | Cached classifier output — `(job_id, axis, label, source, confidence)`, axis ∈ {industry, workflow, stack, platform}, `source ∈ {regex, llm, manual}`. Written on ingest, so analysis survives the text purge |
+| `job_snapshots` | One row per observation of a job — `(job_id, observed_at, stage, total_applicants, hired_count, invites_sent, proposals_tier)`. `search` stages come free with every sync; detail stages are gated on `docs/api_probe.json` |
 | `fetch_runs` | Every API fetch logged: search_term, started/finished, jobs_seen, jobs_new, status |
 | `schema_meta` | Versioned migration ledger — each migration runs once, recorded with timestamp |
 | `jobs_fts` (virtual) | FTS5 index over title + description + skills, kept in sync via triggers |
@@ -202,8 +223,19 @@ Single SQLite file (`upwork_jobs.db`), 6 tables, FTS5 search, versioned migratio
 - `first_seen_at` — set once on first insert, **never overwritten** (true cohort timestamp)
 - `last_fetched_at` — bumped on every refresh
 - `fetch_count` — incremented on every refresh
-- `discovered_via_search` — the search term that originally found it
+- `discovered_via_search` — the watch label that originally found it
 - `url` — `https://www.upwork.com/jobs/<id>` (derived once)
+- `client_total_posted`, `hire_rate` — hires ÷ posted jobs, the strongest "will this post be filled" signal
+- `purged_at` — set when the retention job blanked the text (a fresh fetch clears it)
+
+### Retention
+
+Upwork's terms do not allow storing fetched data for more than 24 hours.
+`sync` therefore blanks `title` and `description` on rows last fetched more than
+`UPWORK_PURGE_TEXT_HOURS` (24) ago and stamps `purged_at`. Numbers, skill tags,
+client fields, timestamps, snapshots and cached classifications stay, so every
+lens still works on older rows (they show as `[purged] <id>`). `UPWORK_PURGE_FIELDS`
+controls which of the two text fields are blanked.
 
 Migrations run idempotently inside per-version SAVEPOINTs, so a partial failure cleanly leaves the DB at the last fully-applied version.
 
@@ -211,12 +243,17 @@ Migrations run idempotently inside per-version SAVEPOINTs, so a partial failure 
 
 ## How metrics are calculated
 
+### Money figures
+
+Every $ figure is a **median with its p25–p75 band** (`$25/hr (18–40)`).
+Budgets are heavy-tailed; one $10k post would move an average a long way.
+
 ### Opportunity Score — general dashboard (per skill, 0-100)
 
 ```
 demand_norm     = skill_jobs / max_jobs_across_all_skills
-budget_norm     = avg_hourly_or_fixed / max_budget_across_all_skills
-competition     = 1 / (1 + avg_proposals / 10)
+budget_norm     = median_hourly_or_fixed / max_median_budget_across_all_skills
+competition     = 1 / (1 + median_proposals / 10)
 
 opportunity_score = (demand_norm × 0.45 + budget_norm × 0.30 + competition × 0.25) × 100
 ```
@@ -234,7 +271,21 @@ opp_score = (budget × 0.50 + verified × 0.20 + competition × 0.30) × 100
 ```
 
 ### Trend % (general dashboard)
-Compares the second half of the analysis window to the first half. Suppressed (shown as `new`) when the older half has fewer than 5 data points.
+Compares the second half of the analysis window to the first half, counting only
+jobs discovered within 48 h of being published (late discoveries reflect sweep
+timing, not the market). Shown as `n/a` unless the window holds at least three
+completed fetch runs and each half has at least 5 such jobs.
+
+### Hire rate
+`client_total_hires / client_total_posted`, per job, then the median per country
+and overall. Missing when the client has never posted (or on rows fetched before
+the column existed).
+
+### Provenance
+Every screen starts with `data as of <last successful fetch> (N h ago)` (red when
+older than `UPWORK_STALE_AFTER_HOURS`) and ends with a footer: window, sample
+size, fetch runs in the window, last fetch. The Excel exports carry the same
+"data as of" in their title row / Summary sheet.
 
 ### BD Shift Window
 Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The window with the highest sum wins.
@@ -246,7 +297,7 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 | Champion | Verified + ≥ $10k spent + ≥ 5 hires |
 | Active | Verified + ≥ 1 hire |
 | New | Verified, no previous hires |
-| Risky | Unverified or 0 hires |
+| Risky | Not payment-verified |
 
 ---
 
@@ -263,20 +314,28 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 | `UPWORK_FETCH_BACKOFF_BASE` | `1.0` | Base seconds for exponential backoff |
 | `UPWORK_FETCH_BACKOFF_MAX` | `30.0` | Cap on backoff delay |
 | `UPWORK_INTEL_LOG` | `WARNING` | Log level (DEBUG/INFO/WARNING/ERROR) |
+| `UPWORK_AGENT_DIR` | `../upwork-proposal-agent` | Where the proposal agent lives; its `watches.txt` is reused read-only |
+| `UPWORK_WATCHES_FILE` | — | Explicit watches file (overrides the agent's) |
+| `UPWORK_SYNC_SINCE_DAYS` | `2` | Lookback per watch on each sync |
+| `UPWORK_SYNC_LIMIT` | `300` | Max jobs per watch on each sync |
+| `UPWORK_PURGE_TEXT_HOURS` | `24` | Blank fetched text after this many hours |
+| `UPWORK_PURGE_FIELDS` | `title,description` | Which text fields the purge blanks |
+| `UPWORK_STALE_AFTER_HOURS` | `24` | When the "data as of" line turns red |
+| `UPWORK_EXPORTS_DIR` | `exports` | Where workbooks and `status.json` go |
 
 ---
 
 ## Testing
 
 ```bash
-make test         # 56 tests in ~0.5s
+make test         # 95 tests in ~0.8s
 make test-cov     # with coverage report
 make lint         # ruff check + format
 ```
 
 Tests cover the regex taxonomies, the classifier behaviour against fixture jobs, the opportunity score formula across boundary inputs, migration idempotency on a fresh DB, and the GraphQL response parser.
 
-CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → n8n -n → skills → probe --offline` end-to-end without any API access.
+CI runs on every PR against Python 3.11/3.12 plus a smoke test that exercises `seed → sync --offline → n8n -n → skills → dashboard → purge --dry-run → install-service --dry-run → probe --offline` end-to-end without any API access.
 
 ---
 
