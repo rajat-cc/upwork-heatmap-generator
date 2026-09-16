@@ -9,6 +9,7 @@ from rich.table import Table
 
 from core.models import Job, N8nReport
 from core.rich_helpers import bar, color_cell, data_as_of_line, fmt_band, make_table, short
+from core.scoring import get_scoring
 from taxonomies.n8n import abbr_workflow
 
 console = Console()
@@ -47,7 +48,8 @@ def _render_headline(report: N8nReport, days: int, last_fetch: str | None) -> No
         f"[bright_black]Top stacks:   [/bright_black] {top_st}\n\n"
         f"[bright_black]Unclassified industry: {report.unclassified_industry}  ·  "
         f"unclassified workflow: {report.unclassified_workflow}  ·  "
-        f"analysed from cached labels (text purged): {purged}[/bright_black]"
+        f"analysed from cached labels (text purged): {purged}  ·  "
+        f"scoring {get_scoring().version} (`main.py explain <id>`)[/bright_black]"
     )
     console.print(Panel(body, title="n8n Demand · Snapshot", border_style="cyan", padding=(1, 2)))
 
@@ -183,7 +185,7 @@ def _render_top_opportunities(report: N8nReport) -> None:
     if not jobs:
         return
     table = Table(
-        title="Top Opportunities  ·  budget × verified × low competition",
+        title=f"Top Opportunities  ·  personal score (scoring {get_scoring().version})",
         caption="Full list w/ industry · stacks · country in: exports/n8n_demand_latest.xlsx",
         caption_style="bright_black",
         box=box.ROUNDED,

@@ -44,33 +44,10 @@ def apply_cached(job: Job, cached: dict | None) -> None:
 
 
 def opportunity_score(job: Job) -> float:
-    """0-100 ranking proxy: budget × verified × low-competition.
+    """0-100 personal opportunity score (see scoring.toml; `main.py explain <id>`)."""
+    from core.scoring import score_job  # lazy: scoring reads the funnel, which reads this
 
-    Weights:
-      - budget         50%
-      - verified       20%
-      - low competition 30%
-    """
-    if job.budget_type == "HOURLY":
-        rate = (
-            (job.budget_min + job.budget_max) / 2
-            if (job.budget_min and job.budget_max)
-            else job.budget_amount
-        )
-        budget_score = min(rate / 100, 1.0) if rate else 0.2
-    elif job.budget_type == "FIXED" and job.budget_amount > 0:
-        budget_score = min(job.budget_amount / 5000, 1.0)
-    else:
-        budget_score = 0.2
-
-    verified_score = 1.0 if job.client_verified else 0.3
-    props = job.total_applicants or 0
-    competition_score = 1 / (1 + props / 15)
-
-    return round(
-        (budget_score * 0.50 + verified_score * 0.20 + competition_score * 0.30) * 100,
-        1,
-    )
+    return score_job(job).total
 
 
 def rows_for(jobs: Iterable[Job], source: str = "regex") -> list[dict]:
