@@ -85,6 +85,9 @@ def win_rate(submitted: int, hired: int) -> WinRate:
 
 
 def client_segment(meta: dict) -> str:
+    # API-sourced proposals carry no client fields at all; that is "unknown", not "risky".
+    if not any(k in meta for k in ("verified", "client_spend", "client_hires")):
+        return "unknown"
     verified = bool(meta.get("verified"))
     spend = meta.get("client_spend") or 0
     hires = meta.get("client_hires") or 0

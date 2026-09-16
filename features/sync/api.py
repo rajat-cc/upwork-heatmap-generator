@@ -6,7 +6,8 @@ Runs from the LaunchAgent every two hours (`core/service.py`) or by hand
   1. fetch every watch (`core/watches.py`), recording a `fetch_runs` row each
   2. classify the rows that fetch touched (all four regex axes) into the cache
   3. snapshots: `search`-stage observations are written inside `upsert_jobs`;
-     detail stages stay gated on `docs/api_probe.json`
+     detail stages (+2h/+24h/+72h via `marketplaceJobPosting(id)`) run when
+     `docs/api_probe.json` says the key may call it (`features/sync/snapshots.py`)
   4. blank fetched text older than the retention limit
   5. write `exports/status.json` for the staleness badge and the digest
 
@@ -63,6 +64,7 @@ class SyncResult:
     classified_jobs: int = 0
     classification_rows: int = 0
     detail_snapshots: str = "gated: run `make probe` first"
+    detail_snapshots_taken: int = 0
     purged: int = 0
     ingested_events: int = 0
     ingest_error: str | None = None
@@ -161,6 +163,19 @@ def run(
         result.classified_jobs = len(jobs)
         result.classification_rows = classifier.persist(jobs)
 
+        if offline:
+            result.detail_snapshots = "offline"
+        elif snapshots and result.error is None:
+            try:
+                from features.sync.snapshots import take_detail_snapshots
+
+                snap = take_detail_snapshots(token=token, transport=transport)
+                result.detail_snapshots = snap.summary()
+                result.detail_snapshots_taken = snap.taken
+            except Exception as exc:  # observations are a bonus; never stop the run
+                log.warning("Detail snapshots failed: %s", exc)
+                result.detail_snapshots = f"failed: {exc}"
+
         if not offline:
             try:
                 from features.automation import llm_tagger
@@ -192,8 +207,9 @@ def run(
                 from features.funnel.vendor import sync_vendor_proposals
 
                 vendor = sync_vendor_proposals(token=token)
-                result.vendor_proposals = (
-                    vendor["skipped"] or f"{vendor['inserted']} new of {vendor['seen']} events"
+                result.vendor_proposals = vendor["skipped"] or (
+                    f"{vendor['inserted']} new of {vendor['seen']} events"
+                    + ("" if vendor.get("complete", True) else " (partial crawl; resumes next run)")
                 )
             except Exception as exc:
                 log.warning("Vendor proposal sync failed: %s", exc)

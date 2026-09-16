@@ -47,5 +47,28 @@ def contents_has_activity(path: str | Path | None = None) -> bool:
     return bool(capabilities(path).get("contents_has_activity"))
 
 
+def detail_has_activity(path: str | Path | None = None) -> bool:
+    """`marketplaceJobPosting(id)` is reachable and carries `activityStat`."""
+    return bool(capabilities(path).get("detail_has_activity"))
+
+
+def detail_client_identity(path: str | Path | None = None) -> bool:
+    """The detail type exposes `clientCompanyPublic` (a stable client id)."""
+    return bool(capabilities(path).get("detail_client_identity"))
+
+
 def vendor_proposals(path: str | Path | None = None) -> bool:
     return bool(capabilities(path).get("vendor_proposals"))
+
+
+def detail_snapshots_reason(path: str | Path | None = None) -> str | None:
+    """None when detail-stage snapshots may run, else why they are gated."""
+    doc = load(path)
+    if doc is None:
+        return "gated: run `make probe` first"
+    caps = doc.get("capabilities", {}) or {}
+    if not caps.get("detail_query"):
+        return "gated: probe says marketplaceJobPosting(id) is not reachable on this key"
+    if not caps.get("detail_has_activity"):
+        return "gated: probe found no activity fields on the detail type"
+    return None

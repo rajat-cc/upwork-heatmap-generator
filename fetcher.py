@@ -497,3 +497,99 @@ def _parse_job(node: dict) -> dict:
         "duration_label": node.get("durationLabel") or "",
         "description": node.get("description") or "",
     }
+
+
+# ─── Job detail (detail-stage snapshots) ────────────────────────────────────
+
+# `marketplaceJobPosting(id)` is scope-gated on some keys; `core.capabilities`
+# says whether this one may call it. The activity block is what the search
+# node lacks: hires so far, invites, interviews, offers, plus the posting's
+# open/closed state and the client's public company id.
+DETAIL_QUERY = """
+query JobDetail($id: ID!) {
+  marketplaceJobPosting(id: $id) {
+    id
+    workFlowState { status closeResult }
+    activityStat {
+      jobActivity {
+        invitesSent totalHired totalInvitedToInterview totalOffered
+        totalUnansweredInvites lastClientActivity
+      }
+      applicationsBidStats {
+        avgRateBid { rawValue } avgInterviewedRateBid { rawValue }
+        minRateBid { rawValue } maxRateBid { rawValue }
+      }
+    }
+    clientCompanyPublic { id city country { name } }
+    contractTerms { contractType personsToHire }
+  }
+}
+"""
+
+
+def _money(node: dict | None) -> float | None:
+    raw = (node or {}).get("rawValue")
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _count(value: Any) -> int | None:
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def parse_detail(node: dict | None) -> dict | None:
+    """Flatten one `marketplaceJobPosting` node; None when the posting is gone."""
+    if not node:
+        return None
+    stat = node.get("activityStat") or {}
+    activity = stat.get("jobActivity") or {}
+    bids = stat.get("applicationsBidStats") or {}
+    state = node.get("workFlowState") or {}
+    company = node.get("clientCompanyPublic") or {}
+    terms = node.get("contractTerms") or {}
+    return {
+        "id": str(node.get("id") or ""),
+        "status": state.get("status") or None,
+        "close_result": state.get("closeResult"),
+        "hired": _count(activity.get("totalHired")),
+        "invites_sent": _count(activity.get("invitesSent")),
+        "interviews": _count(activity.get("totalInvitedToInterview")),
+        "offers": _count(activity.get("totalOffered")),
+        "unanswered_invites": _count(activity.get("totalUnansweredInvites")),
+        "last_client_activity": activity.get("lastClientActivity"),
+        "avg_bid": _money(bids.get("avgRateBid")),
+        "avg_interviewed_bid": _money(bids.get("avgInterviewedRateBid")),
+        "min_bid": _money(bids.get("minRateBid")),
+        "max_bid": _money(bids.get("maxRateBid")),
+        "client_company_id": str(company.get("id") or ""),
+        "client_city": company.get("city") or "",
+        "client_country": (company.get("country") or {}).get("name") or "",
+        "contract_type": terms.get("contractType") or "",
+        "persons_to_hire": _count(terms.get("personsToHire")),
+    }
+
+
+def fetch_job_detail(
+    job_id: str,
+    *,
+    transport: Transport | None = None,
+    token: str | None = None,
+    org_id: str = "",
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict | None:
+    """One detail call → parsed dict, or None when the API no longer returns the posting."""
+    token = token or auth.get_access_token()
+    org_id = org_id or get_org_id(transport=transport, token=token)
+    data = gql(
+        DETAIL_QUERY,
+        {"id": job_id},
+        transport=transport,
+        org_id=org_id,
+        token=token,
+        sleep=sleep,
+    )
+    return parse_detail(data.get("marketplaceJobPosting"))

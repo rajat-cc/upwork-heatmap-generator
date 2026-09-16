@@ -1,79 +1,504 @@
 {
-  "_note": "Synthetic offline fixture for `main.py probe --offline` and tests. Shapes mirror the API; values are illustrative, not authoritative. Run `make probe` against the live API to fill docs/api_probe.json.",
-  "OrgId": {"data": {"organization": {"id": "offline-org"}}},
+  "_note": "Synthetic offline fixture for `main.py probe --offline` and tests. Shapes mirror the API; values are illustrative, not authoritative. Run `make probe` against the live API to fill docs/api_probe.json. Detail-type introspection entries exist so tests can flip ProbeDetail to a success and exercise the detail-stage capability path.",
+  "OrgId": {
+    "data": {
+      "organization": {
+        "id": "offline-org"
+      }
+    }
+  },
   "IntrospectType:MarketplaceJobPostingsSearchFilter": {
-    "data": {"__type": {
-      "name": "MarketplaceJobPostingsSearchFilter", "kind": "INPUT_OBJECT", "enumValues": null, "fields": null,
-      "inputFields": [
-        {"name": "searchExpression_eq", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "categoryIds_any", "type": {"kind": "LIST", "name": null, "ofType": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID"}}}},
-        {"name": "subcategoryIds_any", "type": {"kind": "LIST", "name": null, "ofType": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID"}}}},
-        {"name": "ontologySkillIds_all", "type": {"kind": "LIST", "name": null, "ofType": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID"}}}},
-        {"name": "pagination_eq", "type": {"kind": "INPUT_OBJECT", "name": "Pagination", "ofType": null}}
-      ]
-    }}
+    "data": {
+      "__type": {
+        "name": "MarketplaceJobPostingsSearchFilter",
+        "kind": "INPUT_OBJECT",
+        "enumValues": null,
+        "fields": null,
+        "inputFields": [
+          {
+            "name": "searchExpression_eq",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "categoryIds_any",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              }
+            }
+          },
+          {
+            "name": "subcategoryIds_any",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              }
+            }
+          },
+          {
+            "name": "ontologySkillIds_all",
+            "type": {
+              "kind": "LIST",
+              "name": null,
+              "ofType": {
+                "kind": "NON_NULL",
+                "name": null,
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "ID"
+                }
+              }
+            }
+          },
+          {
+            "name": "pagination_eq",
+            "type": {
+              "kind": "INPUT_OBJECT",
+              "name": "Pagination",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    }
   },
   "ProbeSearch": {
-    "data": {"marketplaceJobPostingsSearch": {"edges": [
-      {"node": {"__typename": "MarketplaceJobPostingSearchEdgeNode", "id": "1000000000000000001", "client": {"__typename": "MarketplaceJobPostingSearchClient"}}}
-    ]}}
+    "data": {
+      "marketplaceJobPostingsSearch": {
+        "edges": [
+          {
+            "node": {
+              "__typename": "MarketplaceJobPostingSearchEdgeNode",
+              "id": "1000000000000000001",
+              "client": {
+                "__typename": "MarketplaceJobPostingSearchClient"
+              }
+            }
+          }
+        ]
+      }
+    }
   },
   "IntrospectType:MarketplaceJobPostingSearchEdgeNode": {
-    "data": {"__type": {
-      "name": "MarketplaceJobPostingSearchEdgeNode", "kind": "OBJECT", "enumValues": null, "inputFields": null,
-      "fields": [
-        {"name": "id", "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}}},
-        {"name": "title", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "description", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "publishedDateTime", "type": {"kind": "SCALAR", "name": "DateTime", "ofType": null}},
-        {"name": "experienceLevel", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "category", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "subcategory", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "totalApplicants", "type": {"kind": "SCALAR", "name": "Int", "ofType": null}},
-        {"name": "client", "type": {"kind": "OBJECT", "name": "MarketplaceJobPostingSearchClient", "ofType": null}}
-      ]
-    }}
+    "data": {
+      "__type": {
+        "name": "MarketplaceJobPostingSearchEdgeNode",
+        "kind": "OBJECT",
+        "enumValues": null,
+        "inputFields": null,
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "title",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "description",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "publishedDateTime",
+            "type": {
+              "kind": "SCALAR",
+              "name": "DateTime",
+              "ofType": null
+            }
+          },
+          {
+            "name": "experienceLevel",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "category",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "subcategory",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "totalApplicants",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "name": "client",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplaceJobPostingSearchClient",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    }
   },
   "IntrospectType:MarketplaceJobPostingSearchClient": {
-    "data": {"__type": {
-      "name": "MarketplaceJobPostingSearchClient", "kind": "OBJECT", "enumValues": null, "inputFields": null,
-      "fields": [
-        {"name": "totalHires", "type": {"kind": "SCALAR", "name": "Int", "ofType": null}},
-        {"name": "totalPostedJobs", "type": {"kind": "SCALAR", "name": "Int", "ofType": null}},
-        {"name": "totalSpent", "type": {"kind": "OBJECT", "name": "Money", "ofType": null}},
-        {"name": "totalReviews", "type": {"kind": "SCALAR", "name": "Int", "ofType": null}},
-        {"name": "totalFeedback", "type": {"kind": "SCALAR", "name": "Float", "ofType": null}},
-        {"name": "verificationStatus", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "location", "type": {"kind": "OBJECT", "name": "MarketplaceLocation", "ofType": null}}
-      ]
-    }}
+    "data": {
+      "__type": {
+        "name": "MarketplaceJobPostingSearchClient",
+        "kind": "OBJECT",
+        "enumValues": null,
+        "inputFields": null,
+        "fields": [
+          {
+            "name": "totalHires",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "name": "totalPostedJobs",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "name": "totalSpent",
+            "type": {
+              "kind": "OBJECT",
+              "name": "Money",
+              "ofType": null
+            }
+          },
+          {
+            "name": "totalReviews",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            }
+          },
+          {
+            "name": "totalFeedback",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Float",
+              "ofType": null
+            }
+          },
+          {
+            "name": "verificationStatus",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "location",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplaceLocation",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    }
   },
   "ProbeDetail": {
     "data": null,
-    "errors": [{"message": "Your OAuth2 permissions do not allow access to this resource (marketplaceJobPosting)."}]
+    "errors": [
+      {
+        "message": "Your OAuth2 permissions do not allow access to this resource (marketplaceJobPosting)."
+      }
+    ]
   },
   "ProbeContents": {
-    "data": {"marketplaceJobPostingsContents": [{"__typename": "MarketplaceJobPostingContent", "id": "1000000000000000001"}]}
+    "data": {
+      "marketplaceJobPostingsContents": [
+        {
+          "__typename": "MarketplaceJobPostingContent",
+          "id": "1000000000000000001"
+        }
+      ]
+    }
   },
   "IntrospectType:MarketplaceJobPostingContent": {
-    "data": {"__type": {
-      "name": "MarketplaceJobPostingContent", "kind": "OBJECT", "enumValues": null, "inputFields": null,
-      "fields": [
-        {"name": "id", "type": {"kind": "NON_NULL", "name": null, "ofType": {"kind": "SCALAR", "name": "ID", "ofType": null}}},
-        {"name": "ciphertext", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "title", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "description", "type": {"kind": "SCALAR", "name": "String", "ofType": null}},
-        {"name": "publishedDateTime", "type": {"kind": "SCALAR", "name": "DateTime", "ofType": null}}
-      ]
-    }}
+    "data": {
+      "__type": {
+        "name": "MarketplaceJobPostingContent",
+        "kind": "OBJECT",
+        "enumValues": null,
+        "inputFields": null,
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "ciphertext",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "title",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "description",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "publishedDateTime",
+            "type": {
+              "kind": "SCALAR",
+              "name": "DateTime",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    }
   },
   "IntrospectType:VendorProposalStatusName": {
-    "data": {"__type": {
-      "name": "VendorProposalStatusName", "kind": "ENUM", "inputFields": null, "fields": null,
-      "enumValues": [{"name": "ACTIVE"}, {"name": "INVITED"}, {"name": "ARCHIVED"}]
-    }}
+    "data": {
+      "__type": {
+        "name": "VendorProposalStatusName",
+        "kind": "ENUM",
+        "inputFields": null,
+        "fields": null,
+        "enumValues": [
+          {
+            "name": "ACTIVE"
+          },
+          {
+            "name": "INVITED"
+          },
+          {
+            "name": "ARCHIVED"
+          }
+        ]
+      }
+    }
   },
   "ProbeProposals": {
-    "data": {"vendorProposals": {"pageInfo": {"hasNextPage": false}}}
+    "data": {
+      "vendorProposals": {
+        "pageInfo": {
+          "hasNextPage": false
+        }
+      }
+    }
+  },
+  "IntrospectType:MarketplaceJobPosting": {
+    "data": {
+      "__type": {
+        "name": "MarketplaceJobPosting",
+        "kind": "OBJECT",
+        "enumValues": null,
+        "inputFields": null,
+        "fields": [
+          {
+            "name": "id",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "activityStat",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplacePostingActivityStat",
+              "ofType": null
+            }
+          },
+          {
+            "name": "clientCompanyPublic",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplacePublicCompanyInfo",
+              "ofType": null
+            }
+          },
+          {
+            "name": "workFlowState",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplacePostingWorkFlowState",
+              "ofType": null
+            }
+          },
+          {
+            "name": "contractTerms",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplaceContractTerms",
+              "ofType": null
+            }
+          },
+          {
+            "name": "content",
+            "type": {
+              "kind": "OBJECT",
+              "name": "MarketplaceJobPostingContent",
+              "ofType": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  "IntrospectType:JobActivity": {
+    "data": {
+      "__type": {
+        "name": "JobActivity",
+        "kind": "OBJECT",
+        "enumValues": null,
+        "inputFields": null,
+        "fields": [
+          {
+            "name": "invitesSent",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "lastClientActivity",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "name": "totalHired",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "totalInvitedToInterview",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "totalOffered",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "name": "totalUnansweredInvites",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          }
+        ]
+      }
+    }
   }
 }

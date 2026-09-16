@@ -21,6 +21,7 @@ def test_optional_fields_requested_only_when_live_probe_lists_them(tmp_path, mon
     import fetcher
     from core import capabilities
 
+    monkeypatch.setattr(capabilities, "PROBE_PATH", tmp_path / "missing.json")
     assert "subcategory" not in fetcher.search_query()  # no probe file → not requested
     probe = tmp_path / "probe.json"
     probe.write_text(
@@ -285,3 +286,99 @@ def test_dashboard_lens_conforms(isolated_db, monkeypatch):
     report = run_lens(lens, 7)
     assert report["clients"]["total_jobs"] == 4
     assert (isolated_db.parent / "exports" / "latest.xlsx").exists()
+
+
+# ─── LLM tagger: CLI sign-in preflight and error envelopes ──────────────────
+
+
+def test_llm_tagger_preflight_and_auth_failure_stop_the_run(isolated_db, monkeypatch):
+    import config
+    import db
+    from features.automation import llm_tagger
+
+    db.init_db()
+    monkeypatch.setattr(config, "LLM_TAGGING", True)
+    monkeypatch.setattr(llm_tagger.shutil, "which", lambda _name: "/usr/local/bin/claude")
+    monkeypatch.setattr(llm_tagger, "auth_status", lambda binary=None: (False, "none"))
+    res = llm_tagger.tag()
+    assert "claude auth login" in res.skipped and res.considered == 0
+
+    # Twelve untagged jobs → two batches; an auth failure on the first stops the second.
+    db.upsert_jobs(
+        [
+            {"id": f"a{i}", "title": "t", "description": "d", "published_at": _today(i)}
+            for i in range(12)
+        ]
+    )
+    calls: list[str] = []
+
+    def failing_runner(prompt: str) -> str:
+        calls.append(prompt)
+        raise RuntimeError("claude -p error: Failed to authenticate: OAuth session expired")
+
+    res = llm_tagger.tag(runner=failing_runner)
+    assert res.considered == 12 and len(calls) == 1
+    assert len(res.errors) == 1 and "claude auth login" in res.skipped
+
+    # A non-auth failure only skips that batch.
+    calls.clear()
+
+    def flaky_runner(prompt: str) -> str:
+        calls.append(prompt)
+        if len(calls) == 1:
+            raise RuntimeError("claude -p failed (1): boom")
+        return "{}"
+
+    res = llm_tagger.tag(runner=flaky_runner)
+    assert len(calls) == 2 and len(res.errors) == 1 and res.skipped is None
+
+
+def test_default_runner_and_auth_status_read_the_cli_envelopes(monkeypatch):
+    import subprocess
+
+    import pytest
+
+    from features.automation import llm_tagger
+
+    monkeypatch.setattr(llm_tagger.shutil, "which", lambda _name: "/usr/local/bin/claude")
+
+    # `claude -p` reports auth failures inside the JSON envelope with an empty stderr.
+    envelope = (
+        '{"type":"result","is_error":true,"result":"Failed to authenticate: OAuth session expired"}'
+    )
+
+    def failing_run(cmd, **_kw):
+        return subprocess.CompletedProcess(cmd, 1, stdout=envelope, stderr="")
+
+    monkeypatch.setattr(llm_tagger.subprocess, "run", failing_run)
+    with pytest.raises(RuntimeError, match="Failed to authenticate"):
+        llm_tagger.default_runner("prompt")
+
+    ok = '{"type":"result","is_error":false,"result":"{\\"a\\": [\\"Legal\\"]}"}'
+
+    def ok_run(cmd, **_kw):
+        assert cmd[:2] == ["/usr/local/bin/claude", "-p"] and "--output-format" in cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=ok, stderr="")
+
+    monkeypatch.setattr(llm_tagger.subprocess, "run", ok_run)
+    assert llm_tagger.default_runner("prompt") == '{"a": ["Legal"]}'
+
+    # `claude auth status --json` → signed out / signed in / unreadable.
+    def status_run(payload: str):
+        def _run(cmd, **_kw):
+            assert cmd[1:] == ["auth", "status", "--json"]
+            return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr="")
+
+        return _run
+
+    monkeypatch.setattr(
+        llm_tagger.subprocess, "run", status_run('{"loggedIn": false, "authMethod": "none"}')
+    )
+    assert llm_tagger.auth_status() == (False, "none")
+    monkeypatch.setattr(
+        llm_tagger.subprocess, "run", status_run('{"loggedIn": true, "authMethod": "claude.ai"}')
+    )
+    assert llm_tagger.auth_status() == (True, "claude.ai")
+    monkeypatch.setattr(llm_tagger.subprocess, "run", status_run("not json"))
+    assert llm_tagger.auth_status()[0] is None
+    assert "signed out" in llm_tagger.configured_note() or "via" in llm_tagger.configured_note()

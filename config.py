@@ -55,6 +55,8 @@ PURGE_FIELDS = tuple(
 )
 STALE_AFTER_HOURS = int(os.getenv("UPWORK_STALE_AFTER_HOURS", "24"))
 SNAPSHOT_MIN_GAP_HOURS = float(os.getenv("UPWORK_SNAPSHOT_MIN_GAP_HOURS", "2"))
+# Detail-stage observations per sync run (each is one API call; 5 req/s bucket).
+SNAPSHOT_DETAIL_CAP = int(os.getenv("UPWORK_SNAPSHOT_DETAIL_CAP", "300"))
 
 # ── Funnel economics ────────────────────────────────────────────────────────
 # What a connect costs you and how many a proposal spends when the outcome

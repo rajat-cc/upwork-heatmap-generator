@@ -29,7 +29,7 @@ from datetime import UTC, datetime, timedelta
 from config import DB_PATH, PURGE_FIELDS, SNAPSHOT_MIN_GAP_HOURS
 from taxonomies.countries import to_iso2
 
-SCHEMA_VERSION = 7  # Bump when adding a migration to MIGRATIONS below.
+SCHEMA_VERSION = 8  # Bump when adding a migration to MIGRATIONS below.
 
 CLASSIFICATION_AXES = ("industry", "workflow", "stack", "platform")
 PURGEABLE_FIELDS = ("title", "description")
@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     hire_rate              REAL,
     subcategory            TEXT DEFAULT '',
     purged_at              TEXT,
+    client_company_id      TEXT DEFAULT '',
     first_seen_at          TEXT NOT NULL,
     last_fetched_at        TEXT NOT NULL,
     fetch_count            INTEGER NOT NULL DEFAULT 1,
@@ -159,9 +160,19 @@ CREATE TABLE IF NOT EXISTS job_snapshots (
     invites_sent     INTEGER,
     proposals_tier   TEXT,
     source           TEXT NOT NULL DEFAULT 'search',
+    interviews          INTEGER,
+    offers              INTEGER,
+    unanswered_invites  INTEGER,
+    job_status          TEXT,
+    avg_bid             REAL,
+    avg_interviewed_bid REAL,
+    min_bid             REAL,
+    max_bid             REAL,
+    last_client_activity TEXT,
     PRIMARY KEY (job_id, observed_at)
 );
 CREATE INDEX IF NOT EXISTS idx_snap_job       ON job_snapshots(job_id, observed_at);
+CREATE INDEX IF NOT EXISTS idx_snap_stage     ON job_snapshots(stage, job_id);
 
 {_EVENTS_DDL};
 CREATE INDEX IF NOT EXISTS idx_events_job     ON proposal_events(job_id, ts);
@@ -179,6 +190,12 @@ CREATE TABLE IF NOT EXISTS fetch_runs (
                  CHECK (status IN ('running','done','error'))
 );
 CREATE INDEX IF NOT EXISTS idx_runs_started   ON fetch_runs(started_at);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS schema_meta (
     version     INTEGER PRIMARY KEY,
@@ -289,6 +306,8 @@ def _ensure_legacy_columns(conn):
         "hire_rate": "REAL",
         "subcategory": "TEXT DEFAULT ''",
         "purged_at": "TEXT",
+        # v8
+        "client_company_id": "TEXT DEFAULT ''",
     }
     for col, defn in legacy_adds.items():
         if col not in cols:
@@ -437,6 +456,30 @@ def _migration_7_proposal_events(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_event ON proposal_events(event, ts)")
 
 
+# Columns a v7 `job_snapshots` table lacks; added in place (a snapshot is a cache).
+_SNAPSHOT_DETAIL_COLUMNS: dict[str, str] = {
+    "interviews": "INTEGER",
+    "offers": "INTEGER",
+    "unanswered_invites": "INTEGER",
+    "job_status": "TEXT",
+    "avg_bid": "REAL",
+    "avg_interviewed_bid": "REAL",
+    "min_bid": "REAL",
+    "max_bid": "REAL",
+    "last_client_activity": "TEXT",
+}
+
+
+def _migration_8_detail_snapshots(conn):
+    """Detail-stage snapshot columns and the stage index; `jobs.client_company_id`
+    is patched in by `_ensure_legacy_columns` before this runs."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(job_snapshots)").fetchall()}
+    for col, defn in _SNAPSHOT_DETAIL_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE job_snapshots ADD COLUMN {col} {defn}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_snap_stage ON job_snapshots(stage, job_id)")
+
+
 MIGRATIONS = [
     (
         1,
@@ -453,6 +496,12 @@ MIGRATIONS = [
     (5, _migration_5_snapshot_baseline, "job_snapshots table with a baseline observation per job"),
     (6, _migration_6_classification_axes, "job_classifications accepts the 'platform' axis"),
     (7, _migration_7_proposal_events, "proposal_events outcome ledger"),
+    (
+        8,
+        _migration_8_detail_snapshots,
+        "Detail-stage snapshot columns (hires, interviews, offers, status, bid stats); "
+        "jobs.client_company_id",
+    ),
 ]
 
 
@@ -556,6 +605,7 @@ JOB_DEFAULTS: dict = {
     "duration_label": "",
     "client_total_posted": 0,
     "subcategory": "",
+    "client_company_id": "",
 }
 
 _UPSERT_SQL = """
@@ -565,7 +615,7 @@ _UPSERT_SQL = """
         total_applicants, client_total_hires, client_total_spent,
         client_verified, client_feedback, client_country,
         is_premium, is_enterprise, duration_label,
-        client_total_posted, hire_rate, subcategory, purged_at,
+        client_total_posted, hire_rate, subcategory, purged_at, client_company_id,
         first_seen_at, last_fetched_at, fetch_count, discovered_via_search
     ) VALUES (
         :id, :title, :description, :url, :published_at, :category, :contractor_tier,
@@ -573,7 +623,7 @@ _UPSERT_SQL = """
         :total_applicants, :client_total_hires, :client_total_spent,
         :client_verified, :client_feedback, :client_country,
         :is_premium, :is_enterprise, :duration_label,
-        :client_total_posted, :hire_rate, :subcategory, NULL,
+        :client_total_posted, :hire_rate, :subcategory, NULL, :client_company_id,
         :first_seen_at, :last_fetched_at, 1, :discovered_via_search
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -600,6 +650,7 @@ _UPSERT_SQL = """
         client_total_posted = excluded.client_total_posted,
         hire_rate           = excluded.hire_rate,
         subcategory         = COALESCE(NULLIF(excluded.subcategory, ''), jobs.subcategory),
+        client_company_id   = COALESCE(NULLIF(excluded.client_company_id, ''), jobs.client_company_id),
         purged_at           = NULL,        -- fresh text from the API restarts the 24h clock
         last_fetched_at     = excluded.last_fetched_at,
         fetch_count         = jobs.fetch_count + 1
@@ -682,13 +733,23 @@ def record_snapshot(
     hired_count: int | None = None,
     invites_sent: int | None = None,
     proposals_tier: str | None = None,
+    interviews: int | None = None,
+    offers: int | None = None,
+    unanswered_invites: int | None = None,
+    job_status: str | None = None,
+    avg_bid: float | None = None,
+    avg_interviewed_bid: float | None = None,
+    min_bid: float | None = None,
+    max_bid: float | None = None,
+    last_client_activity: str | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT OR IGNORE INTO job_snapshots
             (job_id, observed_at, stage, total_applicants, hired_count, invites_sent,
-             proposals_tier, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             proposals_tier, source, interviews, offers, unanswered_invites, job_status,
+             avg_bid, avg_interviewed_bid, min_bid, max_bid, last_client_activity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             job_id,
@@ -699,8 +760,129 @@ def record_snapshot(
             invites_sent,
             proposals_tier,
             source,
+            interviews,
+            offers,
+            unanswered_invites,
+            job_status,
+            avg_bid,
+            avg_interviewed_bid,
+            min_bid,
+            max_bid,
+            last_client_activity,
         ),
     )
+
+
+# ─── Detail-stage snapshots ─────────────────────────────────────────────────
+
+# (stage, window start, window end) in hours after publication. A stage is due
+# only while the posting's age is inside its window, so a '+2h' row always
+# means "observed 2–24 h after publication"; a job discovered late simply
+# skips the stages it missed instead of back-filling a misleading row.
+DETAIL_STAGES: tuple[tuple[str, float, float], ...] = (
+    ("+2h", 2.0, 24.0),
+    ("+24h", 24.0, 72.0),
+    ("+72h", 72.0, 168.0),
+)
+DETAIL_MAX_AGE_HOURS = 168.0
+
+
+def due_detail_snapshots(*, now: str | None = None) -> list[tuple[str, str]]:
+    """(job_id, stage) pairs whose observation window is open and unrecorded.
+
+    Only jobs first seen within the last week are considered, so legacy rows
+    are never snapshotted. Later stages come first, then the postings closest
+    to leaving their window, so the most informative observations survive the
+    per-run cap.
+    """
+    now_iso = now or _now_iso()
+    now_dt = parse_iso(now_iso) or datetime.now(UTC)
+    since = (now_dt - timedelta(hours=DETAIL_MAX_AGE_HOURS)).strftime("%Y-%m-%dT%H:%M:%S")
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, published_at FROM jobs "
+            " WHERE first_seen_at >= ? AND published_at >= ? AND published_at != ''",
+            (since, since),
+        ).fetchall()
+        taken = {
+            (r[0], r[1])
+            for r in conn.execute("SELECT job_id, stage FROM job_snapshots WHERE stage != 'search'")
+        }
+    order = {stage: i for i, (stage, _, _) in enumerate(DETAIL_STAGES)}
+    due: list[tuple[str, str, float]] = []
+    for job_id, published in rows:
+        age = hours_between(published, now_iso)
+        if age is None:
+            continue
+        for stage, lo, hi in DETAIL_STAGES:
+            if lo <= age < hi and (job_id, stage) not in taken:
+                due.append((job_id, stage, age))
+    due.sort(key=lambda t: (-order[t[1]], -t[2]))
+    return [(job_id, stage) for job_id, stage, _ in due]
+
+
+def record_detail_snapshot(
+    job_id: str, stage: str, detail: dict, *, observed_at: str | None = None
+) -> None:
+    """Persist one detail-stage observation and the client id it revealed."""
+    with get_conn() as conn:
+        record_snapshot(
+            conn,
+            job_id,
+            observed_at or _now_iso_precise(),
+            None,
+            stage=stage,
+            source="detail",
+            hired_count=detail.get("hired"),
+            invites_sent=detail.get("invites_sent"),
+            interviews=detail.get("interviews"),
+            offers=detail.get("offers"),
+            unanswered_invites=detail.get("unanswered_invites"),
+            job_status=detail.get("status"),
+            avg_bid=detail.get("avg_bid"),
+            avg_interviewed_bid=detail.get("avg_interviewed_bid"),
+            min_bid=detail.get("min_bid"),
+            max_bid=detail.get("max_bid"),
+            last_client_activity=detail.get("last_client_activity"),
+        )
+        company = detail.get("client_company_id")
+        if company:
+            conn.execute(
+                "UPDATE jobs SET client_company_id = ? "
+                " WHERE id = ? AND (client_company_id IS NULL OR client_company_id = '')",
+                (str(company), job_id),
+            )
+
+
+# ─── Sync state (small key/value ledger for incremental crawls) ─────────────
+
+
+def get_state(key: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM sync_state WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_state(key: str, value: str | None) -> None:
+    with get_conn() as conn:
+        if value is None:
+            conn.execute("DELETE FROM sync_state WHERE key = ?", (key,))
+        else:
+            conn.execute(
+                "INSERT INTO sync_state (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "updated_at = excluded.updated_at",
+                (key, value, _now_iso()),
+            )
+
+
+def latest_detail_snapshot(job_id: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM job_snapshots WHERE job_id = ? AND source = 'detail' "
+            " ORDER BY observed_at DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
 
 
 def purge_text(

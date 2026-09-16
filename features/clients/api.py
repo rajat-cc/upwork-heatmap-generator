@@ -41,9 +41,11 @@ class ClientsLens:
             )
         else:
             table = make_table(
-                "Likely repeat posters  ·  same country, spend, hires and posted count (heuristic)"
+                "Likely repeat posters  ·  exact = public company id from a detail fetch, "
+                "heuristic = same country, spend, hires and posted count"
             )
             table.add_column("Client", style="bold white", min_width=16)
+            table.add_column("Match", min_width=9)
             table.add_column("Segment", min_width=9)
             table.add_column("Posts", justify="right", style="cyan", min_width=5)
             table.add_column("Spent", justify="right", style="green", min_width=8)
@@ -57,7 +59,7 @@ class ClientsLens:
                 rate = f"{r.hire_rate * 100:.0f}%" if r.hire_rate is not None else "—"
                 you = f"{r.your_hired}/{r.your_submitted}" if r.your_submitted else "—"
                 table.add_row(
-                    f"{r.country_name} · {r.key[:6]}", r.segment, str(r.posts), fmt_money(r.spent),
+                    f"{r.country_name} · {r.label}", r.match, r.segment, str(r.posts), fmt_money(r.spent),
                     str(r.hires), rate, ", ".join(r.workflows) or "—", ", ".join(r.platforms) or "—",
                     you, r.last_seen[:10],
                 )  # fmt: skip
@@ -83,20 +85,20 @@ class ClientsLens:
         ws.title = "Clients"
         write_header(
             ws,
-            ["Key", "Country", "Segment", "Posts", "Spent", "Hires", "Posted", "Hire rate %",
+            ["Key", "Match", "Country", "Segment", "Posts", "Spent", "Hires", "Posted", "Hire rate %",
              "Workflows", "Platforms", "Your submitted", "Your hired", "First post", "Last post", "Job ids"],
-            [10, 18, 10, 6, 10, 6, 7, 11, 30, 20, 13, 10, 12, 12, 40],
+            [14, 10, 18, 10, 6, 10, 6, 7, 11, 30, 20, 13, 10, 12, 12, 40],
         )  # fmt: skip
         for i, r in enumerate(report.rows, 2):
             values = [
-                r.key, r.country_name, r.segment, r.posts, r.spent, r.hires, r.posted,
+                r.key, r.match, r.country_name, r.segment, r.posts, r.spent, r.hires, r.posted,
                 round(r.hire_rate * 100) if r.hire_rate is not None else None,
                 ", ".join(r.workflows), ", ".join(r.platforms), r.your_submitted, r.your_hired,
                 r.first_seen[:10], r.last_seen[:10], ", ".join(r.job_ids),
             ]  # fmt: skip
             for c, v in enumerate(values, 1):
                 ws.cell(row=i, column=c, value=v).alignment = (
-                    RIGHT if c in (4, 5, 6, 7, 8, 11, 12) else LEFT
+                    RIGHT if c in (5, 6, 7, 8, 9, 12, 13) else LEFT
                 )
         ws.freeze_panes = "A2"
         wb.save(path)

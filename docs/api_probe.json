@@ -1,0 +1,409 @@
+{
+  "capabilities": {
+    "client_fields": [
+      "companyOrgUid",
+      "companyRid",
+      "edcUserId",
+      "hasFinancialPrivacy",
+      "lastContractPlatform",
+      "lastContractRid",
+      "lastContractTitle",
+      "location",
+      "totalFeedback",
+      "totalHires",
+      "totalPostedJobs",
+      "totalReviews",
+      "totalSpent",
+      "verificationStatus"
+    ],
+    "client_identity_fields": [],
+    "contents_fields": [
+      "annotations",
+      "ciphertext",
+      "description",
+      "id",
+      "publishedDateTime",
+      "title"
+    ],
+    "contents_has_activity": false,
+    "contents_query": true,
+    "detail_activity_fields": [
+      "invitesSent",
+      "lastClientActivity",
+      "totalHired",
+      "totalInvitedToInterview",
+      "totalOffered",
+      "totalRecommended",
+      "totalUnansweredInvites"
+    ],
+    "detail_client_identity": true,
+    "detail_fields": [
+      "activityStat",
+      "additionalSearchInfo",
+      "annotations",
+      "attachments",
+      "canClientReceiveContractProposal",
+      "classification",
+      "clientCompanyPublic",
+      "clientProposals",
+      "content",
+      "contractTerms",
+      "contractorSelection",
+      "customFields",
+      "id",
+      "ownership",
+      "segmentationData",
+      "workFlowState"
+    ],
+    "detail_has_activity": true,
+    "detail_query": true,
+    "filter_fields": [
+      "area_eq",
+      "budgetRange_eq",
+      "categoryIds_any",
+      "clientHiresRange_eq",
+      "daysPosted_eq",
+      "duration_any",
+      "enterpriseOnly_eq",
+      "experienceLevel_eq",
+      "hourlyRate_eq",
+      "jobType_eq",
+      "locations_any",
+      "occupationIds_any",
+      "ontologySkillIds_all",
+      "pagination_eq",
+      "preserveFacet_eq",
+      "previousClients_eq",
+      "proposalRange_eq",
+      "ptcIds_any",
+      "ptcOnly_eq",
+      "searchExpression_eq",
+      "searchTerm_eq",
+      "skillExpression_eq",
+      "subcategoryIds_any",
+      "timezone_eq",
+      "titleExpression_eq",
+      "userLocationMatch_eq",
+      "verifiedPaymentOnly_eq",
+      "visitorCountry_eq",
+      "workload_eq"
+    ],
+    "proposal_statuses": [
+      "Accepted",
+      "Declined",
+      "Withdrawn",
+      "Offered",
+      "Activated",
+      "Archived",
+      "Hired",
+      "Pending",
+      "Invalid"
+    ],
+    "search_node_fields": [
+      "amount",
+      "applied",
+      "category",
+      "ciphertext",
+      "client",
+      "clientNotSureFields",
+      "clientPrivateFields",
+      "createdDateTime",
+      "description",
+      "duration",
+      "durationLabel",
+      "engagement",
+      "engagementDuration",
+      "enterprise",
+      "experienceLevel",
+      "freelancerClientRelation",
+      "freelancersToHire",
+      "hourlyBudgetMax",
+      "hourlyBudgetMin",
+      "hourlyBudgetType",
+      "id",
+      "job",
+      "localJobUserDistance",
+      "occupations",
+      "preferredFreelancerLocation",
+      "preferredFreelancerLocationMandatory",
+      "premium",
+      "publishedDateTime",
+      "recordNumber",
+      "relevance",
+      "relevanceEncoded",
+      "renewedDateTime",
+      "skills",
+      "subcategory",
+      "teamId",
+      "title",
+      "totalApplicants",
+      "totalFreelancersToHire",
+      "weeklyBudget"
+    ],
+    "vendor_proposals": true
+  },
+  "checks": {
+    "contents_fields": {
+      "details": {
+        "enum_values": [],
+        "fields": {
+          "annotations": "MarketplacePostingAnnotations",
+          "ciphertext": "String!",
+          "description": "String!",
+          "id": "ID!",
+          "publishedDateTime": "String!",
+          "title": "String!"
+        },
+        "input_fields": {},
+        "kind": "OBJECT",
+        "name": "MarketplaceJobPostingsContents"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "contents_query": {
+      "details": {
+        "n": 1,
+        "type": "MarketplaceJobPostingsContents"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "detail_activity_fields": {
+      "details": {
+        "enum_values": [],
+        "fields": {
+          "invitesSent": "Int!",
+          "lastClientActivity": "String",
+          "totalHired": "Int!",
+          "totalInvitedToInterview": "Int!",
+          "totalOffered": "Int!",
+          "totalRecommended": "Int",
+          "totalUnansweredInvites": "Int!"
+        },
+        "input_fields": {},
+        "kind": "OBJECT",
+        "name": "JobActivity"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "detail_fields": {
+      "details": {
+        "enum_values": [],
+        "fields": {
+          "activityStat": "MarketplacePostingActivityStat",
+          "additionalSearchInfo": "MarketplaceAdditionalSearchInfo",
+          "annotations": "MarketplacePostingAnnotations",
+          "attachments": "[MarketplacePostingAttachment!]",
+          "canClientReceiveContractProposal": "Boolean!",
+          "classification": "MarketplacePostingClassification",
+          "clientCompanyPublic": "MarketplacePublicCompanyInfo",
+          "clientProposals": "ClientProposalsConnection!",
+          "content": "MarketplaceJobPostingContent",
+          "contractTerms": "MarketplaceContractTerms",
+          "contractorSelection": "MarketplaceContractorSelection",
+          "customFields": "CustomFieldsConnection",
+          "id": "ID!",
+          "ownership": "MarketplacePostingOwnership",
+          "segmentationData": "MarketplaceSegmentationData",
+          "workFlowState": "MarketplacePostingWorkFlowState"
+        },
+        "input_fields": {},
+        "kind": "OBJECT",
+        "name": "MarketplaceJobPosting"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "detail_query": {
+      "details": {
+        "id": "2100137489300256159"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "filter_fields": {
+      "details": {
+        "enum_values": [],
+        "fields": {},
+        "input_fields": {
+          "area_eq": "AreaFilter",
+          "budgetRange_eq": "IntRange",
+          "categoryIds_any": "[ID!]",
+          "clientHiresRange_eq": "IntRange",
+          "daysPosted_eq": "Int",
+          "duration_any": "[JobDuration!]",
+          "enterpriseOnly_eq": "Boolean",
+          "experienceLevel_eq": "ExperienceLevel",
+          "hourlyRate_eq": "IntRange",
+          "jobType_eq": "ContractType",
+          "locations_any": "[String!]",
+          "occupationIds_any": "[ID!]",
+          "ontologySkillIds_all": "[ID!]",
+          "pagination_eq": "Pagination",
+          "preserveFacet_eq": "String",
+          "previousClients_eq": "Boolean",
+          "proposalRange_eq": "IntRange",
+          "ptcIds_any": "[ID!]",
+          "ptcOnly_eq": "Boolean",
+          "searchExpression_eq": "String",
+          "searchTerm_eq": "SearchTerm",
+          "skillExpression_eq": "String",
+          "subcategoryIds_any": "[ID!]",
+          "timezone_eq": "String",
+          "titleExpression_eq": "String",
+          "userLocationMatch_eq": "Boolean",
+          "verifiedPaymentOnly_eq": "Boolean",
+          "visitorCountry_eq": "String",
+          "workload_eq": "EngagementType"
+        },
+        "kind": "INPUT_OBJECT",
+        "name": "MarketplaceJobPostingsSearchFilter"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "proposal_statuses": {
+      "details": {
+        "enum_values": [
+          "Accepted",
+          "Declined",
+          "Withdrawn",
+          "Offered",
+          "Activated",
+          "Archived",
+          "Hired",
+          "Pending",
+          "Invalid"
+        ],
+        "fields": {},
+        "input_fields": {},
+        "kind": "ENUM",
+        "name": "VendorProposalStatusName"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "search_client_fields": {
+      "details": {
+        "enum_values": [],
+        "fields": {
+          "companyOrgUid": "ID!",
+          "companyRid": "ID!",
+          "edcUserId": "ID!",
+          "hasFinancialPrivacy": "Boolean!",
+          "lastContractPlatform": "String",
+          "lastContractRid": "ID",
+          "lastContractTitle": "String",
+          "location": "MarketPlaceJobSearchLocation",
+          "totalFeedback": "Float!",
+          "totalHires": "Int!",
+          "totalPostedJobs": "Int!",
+          "totalReviews": "Int!",
+          "totalSpent": "Money",
+          "verificationStatus": "ClientVerificationStatus"
+        },
+        "input_fields": {},
+        "kind": "OBJECT",
+        "name": "MarketplaceJobPostingSearchClientInfo"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "search_node_fields": {
+      "details": {
+        "enum_values": [],
+        "fields": {
+          "amount": "Money!",
+          "applied": "Boolean!",
+          "category": "String",
+          "ciphertext": "String!",
+          "client": "MarketplaceJobPostingSearchClientInfo!",
+          "clientNotSureFields": "[String]",
+          "clientPrivateFields": "[String]",
+          "createdDateTime": "String!",
+          "description": "String!",
+          "duration": "JobDuration",
+          "durationLabel": "String",
+          "engagement": "String",
+          "engagementDuration": "EngagementDuration",
+          "enterprise": "Boolean!",
+          "experienceLevel": "FreelancerProfileExperienceLevel",
+          "freelancerClientRelation": "FreelancerClientRelation",
+          "freelancersToHire": "Int!",
+          "hourlyBudgetMax": "Money",
+          "hourlyBudgetMin": "Money",
+          "hourlyBudgetType": "JobPostingHourlyBudgetType",
+          "id": "ID!",
+          "job": "MarketplaceJobPosting",
+          "localJobUserDistance": "String",
+          "occupations": "MarketplaceJobPostingSearchOccupations",
+          "preferredFreelancerLocation": "[String]",
+          "preferredFreelancerLocationMandatory": "Boolean",
+          "premium": "Boolean!",
+          "publishedDateTime": "String!",
+          "recordNumber": "String!",
+          "relevance": "MarketplaceJobPostingSearchRelevance!",
+          "relevanceEncoded": "String!",
+          "renewedDateTime": "String",
+          "skills": "[MarketplaceJobPostingSearchSkill]!",
+          "subcategory": "String",
+          "teamId": "ID",
+          "title": "String!",
+          "totalApplicants": "Int!",
+          "totalFreelancersToHire": "Int",
+          "weeklyBudget": "Money"
+        },
+        "input_fields": {},
+        "kind": "OBJECT",
+        "name": "MarketplaceJobPostingSearchResult"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "search_types": {
+      "details": {
+        "client_type": "MarketplaceJobPostingSearchClientInfo",
+        "node_type": "MarketplaceJobPostingSearchResult",
+        "sample_id": "2100137489300256159"
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    },
+    "vendor_proposals": {
+      "details": {
+        "pageInfo": {
+          "hasNextPage": false
+        }
+      },
+      "error": null,
+      "ok": true,
+      "permission_error": false,
+      "retried": 0
+    }
+  },
+  "offline": false,
+  "org_id": "1264879127982567425",
+  "probed_at": "2026-09-16T11:21:42Z"
+}
