@@ -1,0 +1,8 @@
+ts,event,job_id,title,url,budget,category,client_spend,client_hires,verified,proposals,experience,reason
+2026-06-20T21:29:37Z,NOTIFIED,1000000000000000001,n8n voice agent for a dental clinic,https://www.upwork.com/jobs/~0100000000000001,$40–$70/hr,web_mobile_software_dev,"$48,000",12,yes,7,Expert,
+2026-06-20T21:29:38Z,FILTERED,1000000000000000002,Graphic Designer for Social Media Posts,https://www.upwork.com/jobs/~0100000000000002,$10–$25/hr,design_creative,"$7,674",99,yes,14,Entry Level,client location 'India' not in United States
+2026-06-21T15:00:12Z,NOTIFIED,1000000000000000003,Make.com scenario HubSpot to Slack,https://www.upwork.com/jobs/~0100000000000003,US Based,$600 fixed,sales_marketing,$0,0,yes,1,Intermediate,
+2026-06-21T15:00:12Z,NOTIFIED,1000000000000000003,Make.com scenario HubSpot to Slack,https://www.upwork.com/jobs/~0100000000000003,US Based,$600 fixed,sales_marketing,$0,0,yes,1,Intermediate,
+2026-06-22T09:10:00Z,NOTIFIED,1000000000000000004,Python ETL into PostgreSQL,https://www.upwork.com/jobs/~0100000000000004,All in my domain,Budget not specified,data_science_analytics,"$5,200",3,no,41,,
+2026-06-22T09:11:00Z,NOTIFIED,1000000000000000005,Zapier automation for a law firm intake,https://www.upwork.com/jobs/~0100000000000005,All in my domain,$45/hr,web_mobile_software_dev,"$12,500",6,yes,3,,
+bad,row
