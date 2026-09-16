@@ -66,6 +66,8 @@ class SyncResult:
     purged: int = 0
     ingested_events: int = 0
     ingest_error: str | None = None
+    vendor_proposals: str = ""
+    intel_path: str | None = None
     jobs_total: int = 0
     last_success_at: str | None = None
     error: str | None = None
@@ -170,6 +172,24 @@ def run(
             except Exception as exc:  # never let the ledger break the refresh
                 log.warning("Event ingest skipped: %s", exc)
                 result.ingest_error = str(exc)
+
+            try:
+                from features.funnel.vendor import sync_vendor_proposals
+
+                vendor = sync_vendor_proposals(token=token)
+                result.vendor_proposals = (
+                    vendor["skipped"] or f"{vendor['inserted']} new of {vendor['seen']} events"
+                )
+            except Exception as exc:
+                log.warning("Vendor proposal sync failed: %s", exc)
+                result.vendor_proposals = f"failed: {exc}"
+
+        try:
+            from features.intel import run as write_intel
+
+            result.intel_path = write_intel(days=30)
+        except Exception as exc:  # aggregates only; a failure here must not stop the run
+            log.warning("Market intel export failed: %s", exc)
     finally:
         _release_lock(lock)
 
@@ -244,7 +264,9 @@ def _render(result: SyncResult) -> None:
         f"purged text on {result.purged} rows  ·  {result.ingested_events} new funnel events  ·  "
         f"{result.jobs_total:,} jobs in DB\n"
         f"  {data_as_of_line(result.last_success_at)}\n"
-        f"  [dim]detail snapshots: {result.detail_snapshots}  ·  status: {status_path()}[/dim]\n"
+        f"  [dim]detail snapshots: {result.detail_snapshots}  ·  vendor proposals: "
+        f"{result.vendor_proposals or 'offline'}[/dim]\n"
+        f"  [dim]intel: {result.intel_path or '—'}  ·  status: {status_path()}[/dim]\n"
     )
     if result.error == "reauth":
         console.print("[red]Authorization failed. Run:  make auth[/red]\n")

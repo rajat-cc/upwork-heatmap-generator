@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from config import EXPORTS_DIR
 from core.models import Job, N8nReport
+from core.scoring import get_scoring
 from core.xlsx_helpers import BOLD, CENTER, HDR_FILL, HDR_FONT, LEFT, NORMAL, RIGHT, write_header
 
 
@@ -48,6 +49,7 @@ def _xl_summary(wb: Workbook, report: N8nReport, days: int, data_as_of: str = ""
         ("Top stack", report.stack_count[0][0] if report.stack_count else "—"),
         ("Unclassified industry", report.unclassified_industry),
         ("Unclassified workflow", report.unclassified_workflow),
+        *get_scoring().summary_rows(),
     ]
     for i, (k, v) in enumerate(rows, 1):
         ws.cell(row=i, column=1, value=k).font = BOLD

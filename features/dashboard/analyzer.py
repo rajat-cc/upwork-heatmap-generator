@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytz
 
+from core.scoring import get_scoring
 from core.stats import band, median
 from db import count_fetch_runs, get_conn, hours_between
 from taxonomies.countries import iso2_to_name
@@ -146,6 +147,11 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
         )
 
     if results:
+        sk = get_scoring().skills
+        w_demand = float(sk.get("demand_weight", 0.45))
+        w_budget = float(sk.get("budget_weight", 0.30))
+        w_comp = float(sk.get("competition_weight", 0.25))
+        comp_scale = float(sk.get("competition_scale", 10.0))
         max_count = max(r["count"] for r in results) or 1
         max_budget = max(max(r["med_hourly"], r["med_fixed"]) for r in results) or 1
 
@@ -153,9 +159,10 @@ def skills_stats(days: int = 14, categories: list | None = None) -> list[dict]:
             demand_norm = r["count"] / max_count
             best_budget = r["med_hourly"] if r["med_hourly"] > 0 else r["med_fixed"]
             budget_norm = best_budget / max_budget
-            competition_penalty = 1 / (1 + r["med_proposals"] / 10)
+            competition_penalty = 1 / (1 + r["med_proposals"] / comp_scale)
             r["opportunity_score"] = round(
-                (demand_norm * 0.45 + budget_norm * 0.30 + competition_penalty * 0.25) * 100
+                (demand_norm * w_demand + budget_norm * w_budget + competition_penalty * w_comp)
+                * 100
             )
 
     results.sort(key=lambda x: x["count"], reverse=True)

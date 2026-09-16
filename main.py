@@ -138,6 +138,67 @@ def cmd_funnel(args: argparse.Namespace) -> None:
     run_funnel(days=args.days, export=not args.no_export)
 
 
+def cmd_bands(args: argparse.Namespace) -> None:
+    from features.bands import run as run_bands
+
+    run_bands(days=args.days, export=not args.no_export)
+
+
+def cmd_intel(args: argparse.Namespace) -> None:
+    from features.intel import run as run_intel
+
+    init_db()
+    path = run_intel(days=args.days, path=args.out)
+    console.print(f"  [green]Wrote[/green] market intel (aggregates only) to [cyan]{path}[/cyan]\n")
+
+
+def cmd_explain(args: argparse.Namespace) -> None:
+    from rich.table import Table
+
+    from core.models import Job
+    from core.scoring import build_context, explain_rows, get_scoring, score_job
+    from db import get_jobs_by_ids, snapshots_for
+
+    init_db()
+    rows = get_jobs_by_ids([args.job_id])
+    if not rows:
+        raise SystemExit(f"  job {args.job_id} is not in the database")
+    job = Job.from_row(rows[0])
+    ctx = build_context()
+    snaps = snapshots_for(job.id)
+    if snaps:
+        ctx.latest_applicants[job.id] = int(snaps[-1]["total_applicants"] or 0)
+    score = score_job(job, ctx)
+
+    console.print(Rule(f"[bold cyan]Explain · {job.display_title}[/bold cyan]"))
+    console.print(
+        f"  [dim]id[/dim] {job.id}  ·  [dim]published[/dim] {job.published_at or '?'}  ·  "
+        f"[dim]budget[/dim] {job.budget_type} {job.budget_amount:g}  ·  [dim]applicants[/dim] "
+        f"{ctx.latest_applicants.get(job.id, job.total_applicants)}  ·  [dim]segment[/dim] {score.segment}\n"
+    )
+    table = Table(box=None, header_style="bold white on grey23", border_style="bright_black")
+    for col, just in (
+        ("Component", "left"),
+        ("Input", "left"),
+        ("Norm.", "right"),
+        ("Weight", "right"),
+        ("Points", "right"),
+    ):
+        table.add_column(col, justify=just)
+    for name, raw, norm, weight, pts in explain_rows(score):
+        table.add_row(name, raw, norm, weight, pts)
+    console.print(table)
+    flag = (
+        "  [yellow](win probability is a prior: fewer than 5 submissions in this segment)[/yellow]"
+        if score.insufficient_data
+        else ""
+    )
+    console.print(
+        f"\n  [bold]Total {score.total:.1f} / 100[/bold]{flag}\n"
+        f"  [dim]scoring {get_scoring().version} · {get_scoring().path}[/dim]\n"
+    )
+
+
 def cmd_sync(args: argparse.Namespace) -> None:
     from features.sync import run as run_sync
 
@@ -228,6 +289,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "  python main.py ingest                # read the proposal agent's logs into the ledger\n"
             "  python main.py outcome <job> hired --bid 45 --bid-type hourly --connects 16\n"
             "  python main.py funnel 30             # win rate, cost per hire, by segment\n"
+            "  python main.py bands 30              # what the market pays, and where your bids sit\n"
+            "  python main.py explain <job_id>      # the score decomposition for one job\n"
             "  python main.py skills 7\n"
             "  python main.py shift 14 -t America/New_York\n"
             "  python main.py n8n 7                 # fetch + analyze last 7d of n8n jobs\n"
@@ -317,6 +380,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("days", type=int, nargs="?", default=30, help="Window in days (default: 30)")
     p.add_argument("--no-export", action="store_true", help="Skip the Excel export")
 
+    p = sub.add_parser("bands", help="Bid bands: p25/median/p75 by workflow, segment, experience")
+    p.add_argument("days", type=int, nargs="?", default=30, help="Window in days (default: 30)")
+    p.add_argument("--no-export", action="store_true", help="Skip the Excel export")
+
+    p = sub.add_parser("intel", help="Write exports/market_intel_latest.json (aggregates only)")
+    p.add_argument("days", type=int, nargs="?", default=30, help="Window in days (default: 30)")
+    p.add_argument("--out", metavar="PATH", help="Override the output path")
+
+    p = sub.add_parser("explain", help="Show how one job's opportunity score was computed")
+    p.add_argument("job_id", help="Job id as stored in the database")
+
     p = sub.add_parser("purge", help="Blank fetched text older than the retention limit")
     p.add_argument("--dry-run", action="store_true", help="Count only; change nothing")
     p.add_argument("--hours", type=int, metavar="H", help="Override UPWORK_PURGE_TEXT_HOURS")
@@ -387,6 +461,9 @@ def main() -> None:
         "outcome": cmd_outcome,
         "outcomes": cmd_outcomes,
         "funnel": cmd_funnel,
+        "bands": cmd_bands,
+        "intel": cmd_intel,
+        "explain": cmd_explain,
         "purge": cmd_purge,
         "install-service": cmd_install_service,
         "uninstall-service": cmd_uninstall_service,

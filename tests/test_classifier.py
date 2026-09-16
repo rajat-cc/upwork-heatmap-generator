@@ -113,19 +113,16 @@ def test_opp_score_unknown_budget_gets_baseline():
     assert 20 < j.opp_score < 80
 
 
-@pytest.mark.parametrize(
-    "budget,expected_min",
-    [
-        (1000, 30),  # $1k fixed → at least 30
-        (5000, 50),  # $5k fixed → at least 50
-        (10000, 60),  # $10k fixed → above 60
-    ],
-)
-def test_higher_budget_higher_score(budget, expected_min):
-    j = _make_job(
-        budget_type="FIXED", budget_amount=float(budget), client_verified=1, total_applicants=10
+# Pairs stay below the $5k fixed cap in scoring.toml, above which expected value saturates.
+@pytest.mark.parametrize("lower, higher", [(300, 2500), (1000, 4000), (2500, 5000)])
+def test_higher_budget_higher_score(lower, higher):
+    """A bigger fixed budget never scores lower (scoring.toml: expected_value)."""
+    lo = _make_job(
+        budget_type="FIXED", budget_amount=float(lower), client_verified=1, total_applicants=10
     )
-    classify(j)
-    assert j.opp_score >= expected_min, (
-        f"${budget} fixed scored {j.opp_score}, expected >= {expected_min}"
+    hi = _make_job(
+        budget_type="FIXED", budget_amount=float(higher), client_verified=1, total_applicants=10
     )
+    classify(lo)
+    classify(hi)
+    assert hi.opp_score > lo.opp_score
