@@ -20,6 +20,7 @@ def test_init_db_creates_all_tables(isolated_db):
         "job_classifications",
         "fetch_runs",
         "schema_meta",
+        "sync_state",
         "jobs_fts",
     }
     missing = expected - tables

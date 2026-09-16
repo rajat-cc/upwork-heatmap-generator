@@ -88,7 +88,9 @@ def _funnel_table(report: FunnelReport) -> None:
     prev = None
     for stage in STAGES:
         n = report.stages[stage]
-        conv = "—" if prev in (None, 0) else f"{n / prev * 100:.1f}%"
+        # A stage fed by another source than the one before it (API submissions vs the
+        # agent's drafts) has no meaningful conversion; never print > 100%.
+        conv = "—" if prev in (None, 0) or n > prev else f"{n / prev * 100:.1f}%"
         width = round(n / top * 24)
         bar = "[cyan]" + "█" * width + "[/cyan]" if n else "[bright_black]·[/bright_black]"
         table.add_row(stage.title(), f"{n:,}", conv, bar)

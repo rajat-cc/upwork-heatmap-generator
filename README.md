@@ -60,10 +60,10 @@ segment, budget band, experience, hour notified, platform and workflow.
 | Lens / job | What it adds |
 |---|---|
 | **Automation** (`make automation`, `python main.py automation 7 --platform n8n Make`) | The n8n analysis across every platform label (n8n, Make, Zapier, GoHighLevel, Apps Script, Power Automate, Pipedream, Airtable Automations, custom code), with a platform table and a platform × workflow matrix. `n8n` stays as a shortcut |
-| **LLM tagging** (inside `sync`) | Jobs the regexes leave without an industry are batched to `claude -p` on this machine (Claude Max, no API cost), labels validated against the taxonomy and stored with `source='llm'`. Off with `UPWORK_LLM_TAGGING=0`; capped per run |
+| **LLM tagging** (inside `sync`) | Jobs the regexes leave without an industry are batched to `claude -p` on this machine (Claude Max, no API cost), labels validated against the taxonomy and stored with `source='llm'`. Off with `UPWORK_LLM_TAGGING=0`; capped per run. Needs the standalone CLI signed in (`claude auth login`); a signed-out CLI is reported in `status.json` and skipped |
 | **Winnable heatmap** (`make shift`) | A second 7 × 24 grid of postings that had at most 10 applicants when first seen, in client segments you convert in; the shift window is derived from it once snapshots exist |
 | **Clients** (`make clients`) | Likely repeat posters from a heuristic fingerprint (country, spend, hires, posted count), with their workflows, platforms and your history with them |
-| **Weekly digest** (`make digest`, `install-service --digest`) | This week vs last week: volume, platforms, workflows, hourly median, your funnel, sync health. Markdown to `exports/`, optionally to Telegram every Monday |
+| **Weekly digest** (`make digest`, `make install-digest`) | This week vs last week: volume, platforms, workflows, hourly median, your funnel, sync health. Markdown to `exports/`, optionally to Telegram every Monday |
 
 Excel exports for all lenses go to `exports/`.
 
@@ -118,6 +118,7 @@ make sync                        # fetch → classify → snapshots → purge �
 make sync-offline                # same path on a recorded page (no token needed)
 make purge                       # dry-run of the 24h text purge (python main.py purge to apply)
 make install-service             # launchd job: sync every 2 hours (uninstall-service removes it)
+make install-digest              # launchd job: weekly digest, Monday 08:00 (uninstall-digest removes it)
 
 # Proposal funnel
 make ingest                      # read the agent's alerts.csv + agent.db into the outcome ledger
@@ -137,7 +138,7 @@ python main.py automation 7 --platform n8n Make   # fetch + analyze selected pla
 make clients                     # likely repeat clients (heuristic) and your history with them
 make shift                       # posting volume + the winnable-postings grid and shift window
 make digest                      # weekly digest to exports/ (and Telegram when configured)
-python main.py install-service --digest           # …every Monday 08:00 via launchd
+make install-digest              # …every Monday 08:00 via launchd (uninstall-digest removes it)
 
 # Data management
 make fetch                       # one-off keyword sweep (8 themes)
@@ -247,7 +248,7 @@ upwork_demand_analysis/
 │   │   ├── outcomes.py      #   `outcome` command: DB row + monthly JSONL ledger
 │   │   ├── analyzer.py      #   stages, Beta-shrunk win rate, connects economics, segments
 │   │   ├── renderer.py / exporter.py
-│   │   ├── vendor.py        #   vendorProposals → ledger (gated on docs/api_probe.json)
+│   │   ├── vendor.py        #   vendorProposals → ledger: SUBMITTED/VIEWED/HIRED/LOST from your own proposals (gated on docs/api_probe.json)
 │   │   └── api.py           #   FunnelLens (implements core.lens.Lens)
 │   ├── bands/               #   bid bands lens (p25/median/p75 + your bids vs band)
 │   ├── intel/               #   market_intel_latest.json producer + schema validator
@@ -275,14 +276,14 @@ upwork_demand_analysis/
 
 ## Database schema
 
-Single SQLite file (`upwork_jobs.db`), 8 tables, FTS5 search, versioned migrations (schema v7).
+Single SQLite file (`upwork_jobs.db`), 8 tables, FTS5 search, versioned migrations (schema v8).
 
 | Table | Purpose |
 |---|---|
 | `jobs` | One row per Upwork job (PK = Upwork id) |
 | `job_skills` | Normalised skill list — `(job_id, skill)` for fast skill queries |
 | `job_classifications` | Cached classifier output — `(job_id, axis, label, source, confidence)`, axis ∈ {industry, workflow, stack, platform}, `source ∈ {regex, llm, manual}`. Written on ingest, so analysis survives the text purge |
-| `job_snapshots` | One row per observation of a job — `(job_id, observed_at, stage, total_applicants, hired_count, invites_sent, proposals_tier)`. `search` stages come free with every sync; detail stages are gated on `docs/api_probe.json` |
+| `job_snapshots` | One row per observation of a job — `(job_id, observed_at, stage, source, total_applicants, hired_count, invites_sent, interviews, offers, unanswered_invites, job_status, avg_bid, avg_interviewed_bid, min_bid, max_bid, last_client_activity)`. `search` stages come free with every sync; `+2h`/`+24h`/`+72h` detail stages call `marketplaceJobPosting(id)` when `docs/api_probe.json` says the key may (`features/sync/snapshots.py`), later stages first, capped by `UPWORK_SNAPSHOT_DETAIL_CAP` per run |
 | `proposal_events` | The outcome ledger — `(event_id, job_id, event, ts, source, bid_amount, bid_type, connects_spent, meta_json)`. Deterministic ids make every ingest idempotent; manual outcomes are also appended to `data/outcomes/*.jsonl` |
 | `fetch_runs` | Every API fetch logged: search_term, started/finished, jobs_seen, jobs_new, status |
 | `schema_meta` | Versioned migration ledger — each migration runs once, recorded with timestamp |
@@ -296,6 +297,7 @@ Single SQLite file (`upwork_jobs.db`), 8 tables, FTS5 search, versioned migratio
 - `url` — `https://www.upwork.com/jobs/<id>` (derived once)
 - `client_total_posted`, `hire_rate` — hires ÷ posted jobs, the strongest "will this post be filled" signal
 - `purged_at` — set when the retention job blanked the text (a fresh fetch clears it)
+- `client_company_id` — the client's public company id, learned from a detail-stage snapshot; the `clients` lens groups on it (`exact`) instead of the heuristic fingerprint
 
 ### Retention
 
@@ -422,6 +424,7 @@ Sliding 8-hour sum over weekday posting volume, wrapped around midnight. The win
 | `UPWORK_OUTCOMES_DIR` | `data/outcomes` | Portable JSONL ledger of manual outcomes |
 | `UPWORK_SCORING_FILE` | `scoring.toml` | Alternative scoring constants file |
 | `UPWORK_PORTFOLIO_TAGS` | — | One term per line; drives the score's `fit` component |
+| `UPWORK_SNAPSHOT_DETAIL_CAP` | `300` | Detail-stage observations per sync run (one API call each) |
 | `UPWORK_LLM_TAGGING` | `1` | Tag untagged industries via `claude -p` during sync (`0` disables) |
 | `UPWORK_LLM_TAG_CAP` | `50` | Max jobs sent to the model per sync |
 | `UPWORK_LLM_MODEL` | — | Optional `--model` for the CLI |

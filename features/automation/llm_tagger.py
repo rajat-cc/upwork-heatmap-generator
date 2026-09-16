@@ -9,11 +9,13 @@ process, and a later API-backed runner would go through the official
 Guard rails: only jobs that still have text and no industry label; batches of
 ten; labels validated against the taxonomy; persisted with `source='llm'` and
 a confidence below the regex rows'; a per-run cap; silent skip when the CLI is
-absent or disabled.
+absent, disabled or signed out (`claude auth status` is checked first, and an
+authentication failure mid-run stops the remaining batches).
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -34,6 +36,8 @@ INDUSTRY_LABELS = [name for name, _ in INDUSTRIES]
 BATCH = 10
 DESCRIPTION_CHARS = 500
 LLM_CONFIDENCE = 0.7
+LOGIN_HINT = "claude CLI is signed out — run: claude auth login"
+AUTH_STATUS_TIMEOUT = 20
 
 Runner = Callable[[str], str]  # prompt → model text
 
@@ -66,8 +70,48 @@ def build_prompt(jobs: list[Job]) -> str:
     )
 
 
+def auth_status(binary: str | None = None) -> tuple[bool | None, str]:
+    """Is the Claude Code CLI signed in? `(True|False|None, detail)`; None = unknown.
+
+    `claude auth status --json` answers `{"loggedIn": bool, "authMethod": ...}`.
+    A CLI that cannot answer (old version, timeout) is treated as unknown so a
+    preflight glitch never blocks tagging; a real auth failure still surfaces
+    from the first batch.
+    """
+    binary = binary or shutil.which("claude")
+    if not binary:
+        return False, "claude CLI not found"
+    try:
+        proc = subprocess.run(
+            [binary, "auth", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=AUTH_STATUS_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"auth status unavailable: {exc}"
+    try:
+        doc = json.loads(proc.stdout.strip() or "{}")
+    except ValueError:
+        return None, "auth status unreadable"
+    if not isinstance(doc, dict) or "loggedIn" not in doc:
+        return None, "auth status unreadable"
+    return bool(doc["loggedIn"]), str(doc.get("authMethod") or "")
+
+
+def _is_auth_failure(message: str) -> bool:
+    blob = message.lower()
+    return "authenticate" in blob or "oauth" in blob or "logged out" in blob or "sign in" in blob
+
+
 def default_runner(prompt: str) -> str:
-    """Run `claude -p` and return the model's text (the `result` of its JSON envelope)."""
+    """Run `claude -p` and return the model's text (the `result` of its JSON envelope).
+
+    The CLI reports failures inside the envelope (`is_error: true`, message in
+    `result`) with an empty stderr, so the envelope is parsed before the exit
+    code is judged and its message is what the error carries.
+    """
     binary = shutil.which("claude")
     if not binary:
         raise FileNotFoundError("claude CLI not found")
@@ -77,13 +121,15 @@ def default_runner(prompt: str) -> str:
     proc = subprocess.run(
         cmd, capture_output=True, text=True, timeout=config.LLM_TIMEOUT_SECONDS, check=False
     )
-    if proc.returncode != 0:
-        raise RuntimeError(f"claude -p failed ({proc.returncode}): {proc.stderr.strip()[:200]}")
     out = proc.stdout.strip()
-    try:
+    envelope = None
+    with contextlib.suppress(ValueError):
         envelope = json.loads(out)
-    except ValueError:
-        return out
+    if isinstance(envelope, dict) and envelope.get("is_error"):
+        raise RuntimeError(f"claude -p error: {str(envelope.get('result') or '')[:200]}")
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or out
+        raise RuntimeError(f"claude -p failed ({proc.returncode}): {detail[:200]}")
     if isinstance(envelope, dict) and isinstance(envelope.get("result"), str):
         return envelope["result"]
     return out
@@ -142,6 +188,10 @@ def tag(limit: int | None = None, runner: Runner | None = None) -> TagResult:
         if shutil.which("claude") is None:
             result.skipped = "claude CLI not found"
             return result
+        logged_in, _detail = auth_status()
+        if logged_in is False:
+            result.skipped = LOGIN_HINT
+            return result
         runner = default_runner
 
     jobs = candidates(limit or config.LLM_TAG_CAP)
@@ -151,8 +201,12 @@ def tag(limit: int | None = None, runner: Runner | None = None) -> TagResult:
         try:
             text = runner(build_prompt(batch))
         except Exception as exc:  # one failed batch must not sink the run
-            log.warning("LLM tagging batch failed: %s", exc)
-            result.errors.append(str(exc)[:200])
+            message = str(exc)
+            log.warning("LLM tagging batch failed: %s", message)
+            result.errors.append(message[:200])
+            if _is_auth_failure(message):
+                result.skipped = LOGIN_HINT  # every later batch would fail the same way
+                break
             continue
         labels = parse_labels(text)
         rows = []
@@ -178,4 +232,9 @@ def configured_note() -> str:
     if not enabled():
         return "LLM tagging disabled"
     binary = shutil.which("claude")
-    return f"LLM tagging via {os.path.basename(binary)}" if binary else "claude CLI not found"
+    if not binary:
+        return "claude CLI not found"
+    logged_in, _detail = auth_status(binary)
+    if logged_in is False:
+        return LOGIN_HINT
+    return f"LLM tagging via {os.path.basename(binary)}"

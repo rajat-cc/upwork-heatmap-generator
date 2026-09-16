@@ -186,7 +186,7 @@ def cmd_explain(args: argparse.Namespace) -> None:
 
     from core.models import Job
     from core.scoring import build_context, explain_rows, get_scoring, score_job
-    from db import get_jobs_by_ids, snapshots_for
+    from db import get_jobs_by_ids, latest_detail_snapshot, snapshots_for
 
     init_db()
     rows = get_jobs_by_ids([args.job_id])
@@ -203,8 +203,22 @@ def cmd_explain(args: argparse.Namespace) -> None:
     console.print(
         f"  [dim]id[/dim] {job.id}  ·  [dim]published[/dim] {job.published_at or '?'}  ·  "
         f"[dim]budget[/dim] {job.budget_type} {job.budget_amount:g}  ·  [dim]applicants[/dim] "
-        f"{ctx.latest_applicants.get(job.id, job.total_applicants)}  ·  [dim]segment[/dim] {score.segment}\n"
+        f"{ctx.latest_applicants.get(job.id, job.total_applicants)}  ·  [dim]segment[/dim] {score.segment}"
     )
+    detail = latest_detail_snapshot(job.id)
+    if detail:
+
+        def _n(col: str) -> str:
+            value = detail[col]
+            return "?" if value is None else str(value)
+
+        console.print(
+            f"  [dim]detail {detail['stage']}[/dim] {detail['job_status'] or '?'}  ·  "
+            f"hired {_n('hired_count')}  ·  invites {_n('invites_sent')}  ·  "
+            f"interviews {_n('interviews')}  ·  offers {_n('offers')}"
+            + (f"  ·  client #{job.client_company_id}" if job.client_company_id else "")
+        )
+    console.print()
     table = Table(box=None, header_style="bold white on grey23", border_style="bright_black")
     for col, just in (
         ("Component", "left"),

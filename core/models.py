@@ -47,6 +47,7 @@ class Job:
     hire_rate: float | None = None
     subcategory: str = ""
     purged_at: str | None = None
+    client_company_id: str = ""  # stable client id from a detail fetch; '' when unknown
 
     # Tags applied by classifiers (mutated by `analyze`; persisted via the cache)
     industries: list[str] = field(default_factory=list)
@@ -100,6 +101,7 @@ class Job:
             hire_rate=(float(data["hire_rate"]) if data.get("hire_rate") is not None else None),
             subcategory=data.get("subcategory") or "",
             purged_at=data.get("purged_at") or None,
+            client_company_id=data.get("client_company_id") or "",
         )
 
     @property

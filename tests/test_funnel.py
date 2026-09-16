@@ -96,3 +96,11 @@ def test_empty_window_reports_nothing(isolated_db):
     r = analyze(days=7)
     assert r.jobs == 0 and r.events == 0 and r.win.insufficient
     assert all(v == 0 for v in r.stages.values())
+
+
+def test_client_segment_is_unknown_without_client_fields():
+    from features.funnel.analyzer import client_segment
+
+    assert client_segment({"status": "ACCEPTED", "proposal_id": "p1"}) == "unknown"
+    assert client_segment({"verified": 0, "client_spend": 0, "client_hires": 0}) == "risky"
+    assert client_segment({"verified": 1, "client_spend": 0, "client_hires": 0}) == "new"

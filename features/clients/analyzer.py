@@ -1,11 +1,13 @@
-"""Client accounts from a heuristic fingerprint.
+"""Client accounts: exact when a detail fetch revealed the client's company id,
+heuristic otherwise.
 
-The search API exposes no client id, so jobs are grouped by
+The search node carries no client id, so most jobs are grouped by
 (country, total spent, total hires, jobs posted): a client's history changes
 slowly, so identical tuples inside one window almost always mean one client.
-A fingerprint of all zeros carries no identity and is skipped. Every row is
-labelled as heuristic; the `clients` table lands when the live probe finds a
-stable identity field.
+A fingerprint of all zeros carries no identity and is skipped. Jobs whose
+detail-stage snapshot recorded `clientCompanyPublic.id` group on that id
+instead (`exact=True`); the two kinds never merge, which is the honest
+choice while only recent postings get detail fetches.
 """
 
 from __future__ import annotations
@@ -39,10 +41,19 @@ class ClientRow:
     your_submitted: int = 0
     your_hired: int = 0
     job_ids: list[str] = field(default_factory=list)
+    exact: bool = False  # grouped on the client's public company id, not the heuristic
 
     @property
     def likely_repeat(self) -> bool:
         return self.posts >= 2
+
+    @property
+    def label(self) -> str:
+        return f"#{self.key[3:]}" if self.exact else self.key[:6]
+
+    @property
+    def match(self) -> str:
+        return "exact" if self.exact else "heuristic"
 
 
 @dataclass(slots=True)
@@ -58,6 +69,8 @@ class ClientsReport:
 
 
 def fingerprint(job: Job) -> str | None:
+    if job.client_company_id:
+        return f"id:{job.client_company_id}"  # exact: the public company id from a detail fetch
     if job.client_total_spent <= 0 and job.client_total_hires <= 0 and job.client_total_posted <= 1:
         return None
     raw = f"{job.client_country}|{round(job.client_total_spent)}|{job.client_total_hires}|{job.client_total_posted}"
@@ -114,6 +127,7 @@ def analyze(days: int = 90) -> ClientsReport:
                 your_submitted=sum(submitted.get(j.id, 0) for j in members),
                 your_hired=sum(hired.get(j.id, 0) for j in members),
                 job_ids=[j.id for j in members],
+                exact=key.startswith("id:"),
             )
         )
     out.sort(key=lambda r: (r.posts, r.spent), reverse=True)
