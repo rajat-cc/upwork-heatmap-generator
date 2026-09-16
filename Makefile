@@ -3,11 +3,13 @@ PIP       := .venv/bin/pip
 TZ        ?= Asia/Kolkata
 DAYS      ?= 14
 N8N_DAYS  ?= 7
+FUNNEL_DAYS ?= 30
 LIMIT     ?= 1000
 BACKUPS_DIR ?= backups
 
 .PHONY: help setup setup-dev auth seed dashboard skills shift watch fetch \
         n8n n8n-local probe sync sync-offline purge install-service uninstall-service \
+        ingest funnel outcomes \
         test test-cov lint backup clean
 
 help:
@@ -31,6 +33,10 @@ help:
 	@echo "  make sync                  — fetch watches, classify, snapshot, purge, write exports/status.json"
 	@echo "  make purge                 — dry-run of the 24h text purge (main.py purge to apply)"
 	@echo "  make install-service       — launchd job: sync every 2 hours (uninstall-service removes it)"
+	@echo ""
+	@echo "  make ingest                — read the proposal agent's alerts/drafts into the outcome ledger"
+	@echo "  make funnel                — proposal funnel: win rate, cost per hire, by segment (30d)"
+	@echo "  make outcomes              — list outcomes you recorded (python main.py outcome <job> hired …)"
 	@echo ""
 	@echo "  make test                  — run pytest"
 	@echo "  make test-cov              — pytest with coverage report"
@@ -66,6 +72,9 @@ sync-offline: ; $(PY) main.py sync --offline
 purge:       ; $(PY) main.py purge --dry-run
 install-service:   ; $(PY) main.py install-service
 uninstall-service: ; $(PY) main.py uninstall-service
+ingest:      ; $(PY) main.py ingest
+funnel:      ; $(PY) main.py funnel $(FUNNEL_DAYS)
+outcomes:    ; $(PY) main.py outcomes
 
 fetch:
 	@for kw in "python developer" "react javascript frontend" \

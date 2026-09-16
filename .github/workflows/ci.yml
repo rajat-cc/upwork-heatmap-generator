@@ -73,3 +73,8 @@ jobs:
           python main.py install-service --dry-run
           python main.py probe --offline --out /tmp/api_probe.json
           test -f /tmp/exports/status.json
+          python main.py ingest --agent-dir /nonexistent
+          python main.py outcome 900000000000000001 submitted --bid 45 --bid-type hourly --connects 12
+          python main.py outcome 900000000000000001 hired
+          python main.py outcomes
+          python main.py funnel 30
