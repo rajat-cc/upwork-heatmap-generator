@@ -339,6 +339,7 @@ def fetch_jobs(
     since_days: int | None = None,
     label: str | None = None,
     transport: Transport | None = None,
+    token: str | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> int:
     """Page through a search, upsert every job, and record a `fetch_runs` row.
@@ -347,7 +348,7 @@ def fetch_jobs(
     counted. API failures mark the run `error` and re-raise, so callers such as
     `sync` can record them; interactive callers catch and continue.
     """
-    token = auth.get_access_token()  # fail fast before opening a run
+    token = token or auth.get_access_token()  # fail fast before opening a run
     org_id = get_org_id(transport=transport, token=token)
 
     cutoff_iso = None
@@ -472,6 +473,8 @@ def _parse_job(node: dict) -> dict:
         "skills": json.dumps(skills),
         "total_applicants": node.get("totalApplicants") or 0,
         "client_total_hires": int(client.get("totalHires") or 0),
+        # Hires ÷ posted jobs is the strongest "will this post be filled" signal.
+        "client_total_posted": int(client.get("totalPostedJobs") or 0),
         "client_total_spent": float(spent_raw),
         "client_verified": verified,
         "client_feedback": float(client.get("totalFeedback") or 0),

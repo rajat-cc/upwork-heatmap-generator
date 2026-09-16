@@ -43,11 +43,16 @@ class Job:
     last_fetched_at: str = ""
     fetch_count: int = 1
     discovered_via_search: str = ""
+    client_total_posted: int = 0
+    hire_rate: float | None = None
+    subcategory: str = ""
+    purged_at: str | None = None
 
-    # Tags applied by classifiers (mutated by `analyze`; not persisted on Job)
+    # Tags applied by classifiers (mutated by `analyze`; persisted via the cache)
     industries: list[str] = field(default_factory=list)
     workflows: list[str] = field(default_factory=list)
     stacks: list[str] = field(default_factory=list)
+    platforms: list[str] = field(default_factory=list)
     opp_score: float = 0.0
 
     @classmethod
@@ -91,6 +96,10 @@ class Job:
             last_fetched_at=data.get("last_fetched_at") or "",
             fetch_count=int(data.get("fetch_count") or 1),
             discovered_via_search=data.get("discovered_via_search") or "",
+            client_total_posted=int(data.get("client_total_posted") or 0),
+            hire_rate=(float(data["hire_rate"]) if data.get("hire_rate") is not None else None),
+            subcategory=data.get("subcategory") or "",
+            purged_at=data.get("purged_at") or None,
         )
 
     @property
@@ -98,15 +107,30 @@ class Job:
         """Concatenated text used for keyword classification."""
         return f"{self.title} {self.description} {' '.join(self.skills)}"
 
+    @property
+    def is_purged(self) -> bool:
+        """True once the fetched text has been blanked by the retention purge."""
+        return bool(self.purged_at) or not (self.title or self.description)
+
+    @property
+    def display_title(self) -> str:
+        return self.title or f"[purged] {self.id}"
+
 
 @dataclass(slots=True)
 class WorkflowStats:
-    """Per-workflow money + competition signals."""
+    """Per-workflow money + competition signals (medians and p25–p75 bands)."""
 
     med_hourly: float = 0.0
     med_fixed: float = 0.0
-    avg_proposals: float = 0.0
+    med_proposals: float = 0.0
     verified_pct: int = 0
+    hourly_p25: float = 0.0
+    hourly_p75: float = 0.0
+    fixed_p25: float = 0.0
+    fixed_p75: float = 0.0
+    n_hourly: int = 0
+    n_fixed: int = 0
 
 
 @dataclass(slots=True)

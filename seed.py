@@ -213,6 +213,9 @@ def generate_demo_data(days: int = 14) -> int:
                     "skills": json.dumps(skills),
                     "total_applicants": _random_applicants(),
                     "client_total_hires": client_hires,
+                    "client_total_posted": (client_hires + random.randint(0, 6))
+                    if client_hires
+                    else random.choice([0, 1, 2]),
                     "client_total_spent": client_spent,
                     "client_verified": 1 if random.random() < 0.82 else 0,
                     "client_feedback": round(random.uniform(4.0, 5.0), 2) if client_hires else 0.0,
