@@ -8,7 +8,15 @@ from rich.panel import Panel
 from rich.table import Table
 
 from core.models import Job, N8nReport
-from core.rich_helpers import bar, color_cell, data_as_of_line, fmt_band, make_table, short
+from core.rich_helpers import (
+    bar,
+    budget_label,
+    color_cell,
+    data_as_of_line,
+    fmt_band,
+    make_table,
+    short,
+)
 from core.scoring import get_scoring
 from taxonomies.n8n import abbr_workflow
 
@@ -213,16 +221,4 @@ def _render_top_opportunities(report: N8nReport) -> None:
 
 
 def _budget_label_short(j: Job) -> str:
-    """Tight column-friendly form: `$80-150/hr` or `$5.0k fxd`."""
-    if j.budget_type == "HOURLY":
-        if j.budget_min and j.budget_max:
-            return f"${j.budget_min:.0f}-{j.budget_max:.0f}/hr"
-        if j.budget_amount:
-            return f"${j.budget_amount:.0f}/hr"
-        return "hourly"
-    if j.budget_type == "FIXED" and j.budget_amount:
-        amt = j.budget_amount
-        if amt >= 1000:
-            return f"${amt / 1000:.1f}k fxd"
-        return f"${amt:.0f} fxd"
-    return "—"
+    return budget_label(j, short=True)

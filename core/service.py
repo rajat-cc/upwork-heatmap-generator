@@ -20,10 +20,15 @@ from config import ROOT_DIR
 
 LABEL = "com.upwork-intel.sync"
 DEFAULT_INTERVAL = 7200  # seconds
+KINDS = ("sync", "digest")
 
 
-def plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+def label_for(kind: str = "sync") -> str:
+    return f"com.upwork-intel.{kind}"
+
+
+def plist_path(kind: str = "sync") -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{label_for(kind)}.plist"
 
 
 def log_dir() -> Path:
@@ -37,31 +42,41 @@ def build_plist(
     interval: int = DEFAULT_INTERVAL,
     logs: Path | None = None,
     extra_args: tuple[str, ...] = (),
+    kind: str = "sync",
 ) -> dict:
+    if kind not in KINDS:
+        raise ValueError(f"unknown service kind {kind!r}")
     python = python or sys.executable
     working_dir = working_dir or ROOT_DIR
     logs = logs or log_dir()
-    return {
-        "Label": LABEL,
-        "ProgramArguments": [python, os.path.join(working_dir, "main.py"), "sync", *extra_args],
+    args = ["sync"] if kind == "sync" else ["digest", "--send"]
+    plist: dict = {
+        "Label": label_for(kind),
+        "ProgramArguments": [python, os.path.join(working_dir, "main.py"), *args, *extra_args],
         "WorkingDirectory": working_dir,
-        "StartInterval": int(interval),
-        "RunAtLoad": True,
-        "StandardOutPath": str(logs / "sync.log"),
-        "StandardErrorPath": str(logs / "sync.err.log"),
+        "RunAtLoad": kind == "sync",
+        "StandardOutPath": str(logs / f"{kind}.log"),
+        "StandardErrorPath": str(logs / f"{kind}.err.log"),
         "EnvironmentVariables": {"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin")},
     }
+    if kind == "sync":
+        plist["StartInterval"] = int(interval)
+    else:  # weekly, Monday 08:00 local time
+        plist["StartCalendarInterval"] = {"Weekday": 1, "Hour": 8, "Minute": 0}
+    return plist
 
 
 def _launchctl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["launchctl", *args], capture_output=True, text=True, check=False)
 
 
-def install(*, interval: int = DEFAULT_INTERVAL, dry_run: bool = False) -> tuple[Path, bytes]:
+def install(
+    *, interval: int = DEFAULT_INTERVAL, dry_run: bool = False, kind: str = "sync"
+) -> tuple[Path, bytes]:
     """Write the plist and (re)load it. Returns (path, plist bytes)."""
-    plist = build_plist(interval=interval)
+    plist = build_plist(interval=interval, kind=kind)
     data = plistlib.dumps(plist)
-    path = plist_path()
+    path = plist_path(kind)
     if dry_run:
         return path, data
     log_dir().mkdir(parents=True, exist_ok=True)
@@ -78,9 +93,9 @@ def install(*, interval: int = DEFAULT_INTERVAL, dry_run: bool = False) -> tuple
     return path, data
 
 
-def uninstall() -> bool:
+def uninstall(kind: str = "sync") -> bool:
     """Unload and delete the plist. Returns True if something was removed."""
-    path = plist_path()
+    path = plist_path(kind)
     if not path.exists():
         return False
     _launchctl("bootout", f"gui/{os.getuid()}", str(path))

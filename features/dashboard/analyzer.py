@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytz
 
+import config
 from core.scoring import get_scoring
 from core.stats import band, median
 from db import count_fetch_runs, get_conn, hours_between
@@ -279,6 +280,67 @@ def hourly_matrix(tz_name: str = "UTC", days: int = 14) -> list[list[float]]:
         except (ValueError, AttributeError):
             continue
 
+    weeks = max(1, days / 7)
+    return [[round(matrix[wd][hr] / weeks, 1) for hr in range(24)] for wd in range(7)]
+
+
+def good_segments(days: int = 90) -> set[str] | None:
+    """Client segments where your shrunk win rate is at least the overall one; None when no data."""
+    from features.funnel.analyzer import analyze  # lazy: features import each other only here
+
+    report = analyze(days)
+    rows = [r for r in report.segments.get("client_segment", []) if r.submitted]
+    if not rows:
+        return None
+    return {r.value for r in rows if r.win.shrunk >= report.win.shrunk} or None
+
+
+def winnable_matrix(
+    tz_name: str = "UTC",
+    days: int = 14,
+    *,
+    max_applicants: int | None = None,
+    segments: set[str] | None = None,
+) -> list[list[float]]:
+    """7×24 grid of postings that were still winnable when first seen.
+
+    A posting counts when its first snapshot showed at most `max_applicants`
+    applicants and, when your funnel has data, its client segment is one you
+    convert in at least as well as average.
+    """
+    from core.scoring import client_segment_of
+
+    limit = config.WINNABLE_MAX_APPLICANTS if max_applicants is None else max_applicants
+    tz = pytz.timezone(tz_name)
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT j.*, (SELECT s.total_applicants FROM job_snapshots s
+                          WHERE s.job_id = j.id ORDER BY s.observed_at LIMIT 1) AS first_applicants
+              FROM jobs j WHERE j.published_at >= ?
+            """,
+            (cutoff,),
+        ).fetchall()
+
+    from core.models import Job
+
+    matrix = [[0] * 24 for _ in range(7)]
+    for row in rows:
+        first = row["first_applicants"]
+        if first is None or int(first) > limit:
+            continue
+        job = Job.from_row(row)
+        if segments is not None and client_segment_of(job) not in segments:
+            continue
+        try:
+            dt_utc = datetime.fromisoformat(
+                job.published_at + "+00:00" if "+" not in job.published_at else job.published_at
+            )
+        except ValueError:
+            continue
+        local = dt_utc.astimezone(tz)
+        matrix[local.weekday()][local.hour] += 1
     weeks = max(1, days / 7)
     return [[round(matrix[wd][hr] / weeks, 1) for hr in range(24)] for wd in range(7)]
 

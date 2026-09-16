@@ -6,7 +6,7 @@ from openpyxl.formatting.rule import ColorScaleRule, DataBarRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from config import EXPORTS_DIR
+import config
 
 DAYS_OF_WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -40,9 +40,9 @@ def export_dashboard(
     data_as_of: str = "",
 ) -> str:
     """Build a timestamped Excel workbook and return its path."""
-    os.makedirs(EXPORTS_DIR, exist_ok=True)
+    os.makedirs(config.EXPORTS_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H%M")
-    path = os.path.join(EXPORTS_DIR, f"upwork_dashboard_{ts}.xlsx")
+    path = os.path.join(config.EXPORTS_DIR, f"upwork_dashboard_{ts}.xlsx")
 
     wb = Workbook()
     wb.remove(wb.active)  # remove default blank sheet
@@ -55,7 +55,7 @@ def export_dashboard(
 
     wb.save(path)
     # Keep a fixed "latest" copy for easy access
-    latest = os.path.join(EXPORTS_DIR, "latest.xlsx")
+    latest = os.path.join(config.EXPORTS_DIR, "latest.xlsx")
     wb.save(latest)
     return path
 
