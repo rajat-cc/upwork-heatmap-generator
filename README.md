@@ -63,7 +63,7 @@ segment, budget band, experience, hour notified, platform and workflow.
 | **LLM tagging** (inside `sync`) | Jobs the regexes leave without an industry are batched to `claude -p` on this machine (Claude Max, no API cost), labels validated against the taxonomy and stored with `source='llm'`. Off with `UPWORK_LLM_TAGGING=0`; capped per run. Needs the standalone CLI signed in (`claude auth login`); a signed-out CLI is reported in `status.json` and skipped |
 | **Winnable heatmap** (`make shift`) | A second 7 × 24 grid of postings that had at most 10 applicants when first seen, in client segments you convert in; the shift window is derived from it once snapshots exist |
 | **Clients** (`make clients`) | Likely repeat posters from a heuristic fingerprint (country, spend, hires, posted count), with their workflows, platforms and your history with them |
-| **Weekly digest** (`make digest`, `install-service --digest`) | This week vs last week: volume, platforms, workflows, hourly median, your funnel, sync health. Markdown to `exports/`, optionally to Telegram every Monday |
+| **Weekly digest** (`make digest`, `make install-digest`) | This week vs last week: volume, platforms, workflows, hourly median, your funnel, sync health. Markdown to `exports/`, optionally to Telegram every Monday |
 
 Excel exports for all lenses go to `exports/`.
 
@@ -118,6 +118,7 @@ make sync                        # fetch → classify → snapshots → purge �
 make sync-offline                # same path on a recorded page (no token needed)
 make purge                       # dry-run of the 24h text purge (python main.py purge to apply)
 make install-service             # launchd job: sync every 2 hours (uninstall-service removes it)
+make install-digest              # launchd job: weekly digest, Monday 08:00 (uninstall-digest removes it)
 
 # Proposal funnel
 make ingest                      # read the agent's alerts.csv + agent.db into the outcome ledger
@@ -137,7 +138,7 @@ python main.py automation 7 --platform n8n Make   # fetch + analyze selected pla
 make clients                     # likely repeat clients (heuristic) and your history with them
 make shift                       # posting volume + the winnable-postings grid and shift window
 make digest                      # weekly digest to exports/ (and Telegram when configured)
-python main.py install-service --digest           # …every Monday 08:00 via launchd
+make install-digest              # …every Monday 08:00 via launchd (uninstall-digest removes it)
 
 # Data management
 make fetch                       # one-off keyword sweep (8 themes)

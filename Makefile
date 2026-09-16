@@ -9,6 +9,7 @@ BACKUPS_DIR ?= backups
 
 .PHONY: help setup setup-dev auth seed dashboard skills shift watch fetch \
         n8n n8n-local probe sync sync-offline purge install-service uninstall-service \
+        install-digest uninstall-digest \
         ingest funnel outcomes bands intel automation clients digest \
         test test-cov lint backup clean
 
@@ -33,6 +34,7 @@ help:
 	@echo "  make sync                  — fetch watches, classify, snapshot, purge, write exports/status.json"
 	@echo "  make purge                 — dry-run of the 24h text purge (main.py purge to apply)"
 	@echo "  make install-service       — launchd job: sync every 2 hours (uninstall-service removes it)"
+	@echo "  make install-digest        — launchd job: weekly digest, Monday 08:00 (uninstall-digest removes it)"
 	@echo ""
 	@echo "  make ingest                — read the proposal agent's alerts/drafts into the outcome ledger"
 	@echo "  make funnel                — proposal funnel: win rate, cost per hire, by segment (30d)"
@@ -78,6 +80,8 @@ sync-offline: ; $(PY) main.py sync --offline
 purge:       ; $(PY) main.py purge --dry-run
 install-service:   ; $(PY) main.py install-service
 uninstall-service: ; $(PY) main.py uninstall-service
+install-digest:    ; $(PY) main.py install-service --digest
+uninstall-digest:  ; $(PY) main.py uninstall-service --digest
 ingest:      ; $(PY) main.py ingest
 funnel:      ; $(PY) main.py funnel $(FUNNEL_DAYS)
 outcomes:    ; $(PY) main.py outcomes
